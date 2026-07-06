@@ -220,3 +220,5 @@ if ($mode -eq 'enable') {
 
 Emit-Line @{event='error'; reason='unknown mode'; mode=$mode}
 Emit-Line @{event='finished'}
+
+& "$PSScriptRoot\optimize-report.ps1" --tool 'Startup' --action 'toggle'

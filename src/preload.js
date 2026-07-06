@@ -44,9 +44,32 @@ contextBridge.exposeInMainWorld('beetleAPI', {
       ipcRenderer.on('system:telemetry', listener);
       return () => ipcRenderer.removeListener('system:telemetry', listener);
     },
+    // Fired when the tray flyout window (or anything else in main.js) asks
+    // the main window to switch tabs - see FlyoutApp.jsx's onNavigate/
+    // onAskQuestion, which can't touch this window's React state directly
+    // since they run in a separate BrowserWindow.
+    onNavigate: (callback) => {
+      const listener = (_event, tab) => callback(tab);
+      ipcRenderer.on('app:navigate', listener);
+      return () => ipcRenderer.removeListener('app:navigate', listener);
+    },
     openExternal: (url) => ipcRenderer.invoke('system:open-external', url),
     shell: (command, ...args) =>
       ipcRenderer.invoke('system:shell', { command, args }),
+  },
+
+  // FLYOUT: only meaningful from inside the tray flyout's own small
+  // BrowserWindow (see main.js's createFlyoutWindow + FlyoutApp.jsx).
+  // hover() lets main.js know the cursor is over the popup's own content,
+  // so it doesn't hide the window just because the cursor left the tray
+  // icon on the way down into the popup. navigate() asks main.js to focus
+  // the main window and switch it to the given tab, then closes the popup.
+  flyout: {
+    hover: (isHovered) => ipcRenderer.send('flyout:hover', isHovered),
+    navigate: (tab) => ipcRenderer.invoke('flyout:navigate', tab),
+    // Reports the flyout's real rendered content size so main.js can size
+    // the popup window to fit instead of guessing a fixed height.
+    resize: (size) => ipcRenderer.send('flyout:resize', size),
   },
 
   // AUTH: loopback-redirect OAuth (RFC 8252). Each call opens the user's
@@ -88,17 +111,60 @@ contextBridge.exposeInMainWorld('beetleAPI', {
     listScheduledTasks: () => ipcRenderer.invoke('optimizer:list-scheduled-tasks'),
     disableScheduledTask: (taskPath, taskName, token) => ipcRenderer.invoke('optimizer:disable-scheduled-task', taskPath, taskName, token),
     enableScheduledTask: (taskPath, taskName, token) => ipcRenderer.invoke('optimizer:enable-scheduled-task', taskPath, taskName, token),
+    createScheduledTask: (name, trigger, command, args, token) => ipcRenderer.invoke('optimizer:create-scheduled-task', name, trigger, command, args, token),
+    deleteScheduledTask: (taskPath, taskName, token) => ipcRenderer.invoke('optimizer:delete-scheduled-task', taskPath, taskName, token),
     // Tweak Manager
     tweaksStatus: () => ipcRenderer.invoke('optimizer:tweaks-status'),
     tweaksApply: (id, token) => ipcRenderer.invoke('optimizer:tweaks-apply', id, token),
     tweaksRevert: (id, token) => ipcRenderer.invoke('optimizer:tweaks-revert', id, token),
     // Driver check (read-only)
     listDrivers: () => ipcRenderer.invoke('optimizer:list-drivers'),
+    // Internet optimization (TCP/DNS/MTU tuning)
+    internetList: () => ipcRenderer.invoke('optimizer:internet-list'),
+    internetOptimize: (token) => ipcRenderer.invoke('optimizer:internet-optimize', token),
+    internetReset: (token) => ipcRenderer.invoke('optimizer:internet-reset', token),
     // File Shredder
     pickFilesForShred: () => ipcRenderer.invoke('optimizer:pick-files-for-shred'),
     shredFiles: (paths, token) => ipcRenderer.invoke('optimizer:shred-files', paths, token),
     // Browser Protection check (read-only)
     browserCheck: () => ipcRenderer.invoke('optimizer:browser-check'),
+    diskExplorer: () => ipcRenderer.invoke('optimizer:disk-explorer'),
+    fileRecoveryList: () => ipcRenderer.invoke('optimizer:file-recovery-list'),
+    fileRecoveryRestore: (paths, destDir, token) => ipcRenderer.invoke('optimizer:file-recovery-restore', paths, destDir, token),
+    pickFolder: () => ipcRenderer.invoke('optimizer:pick-folder'),
+    listAddons: () => ipcRenderer.invoke('optimizer:list-addons'),
+    win10List: () => ipcRenderer.invoke('optimizer:win10-list'),
+    wiperList: () => ipcRenderer.invoke('optimizer:wiper-list'),
+    wiperWipe: (driveLetter, token) => ipcRenderer.invoke('optimizer:wiper-wipe', driveLetter, token),
+    slimmerList: () => ipcRenderer.invoke('optimizer:slimmer-list'),
+    slimmerApply: (op, token) => ipcRenderer.invoke('optimizer:slimmer-apply', op, token),
+    modeList: () => ipcRenderer.invoke('optimizer:mode-list'),
+    modeSet: (schemeId, token) => ipcRenderer.invoke('optimizer:mode-set', schemeId, token),
+    contextMenuList: () => ipcRenderer.invoke('optimizer:context-menu-list'),
+    contextMenuDisable: (id, token) => ipcRenderer.invoke('optimizer:context-menu-disable', id, token),
+    contextMenuEnable: (id, token) => ipcRenderer.invoke('optimizer:context-menu-enable', id, token),
+    integratorList: () => ipcRenderer.invoke('optimizer:integrator-list'),
+    integratorAdd: (id, token) => ipcRenderer.invoke('optimizer:integrator-add', id, token),
+    integratorRemove: (id, token) => ipcRenderer.invoke('optimizer:integrator-remove', id, token),
+    rescueList: () => ipcRenderer.invoke('optimizer:rescue-list'),
+    registryDefrag: () => ipcRenderer.invoke('optimizer:registry-defrag'),
+    registryDefragCompact: (token) => ipcRenderer.invoke('optimizer:registry-defrag-compact', token),
+    actionCenterList: () => ipcRenderer.invoke('optimizer:action-center'),
+    actionCenterApply: (op, token) => ipcRenderer.invoke('optimizer:action-center-apply', op, token),
+    debugLog: () => ipcRenderer.invoke('optimizer:debug-log'),
+    diskPriority: () => ipcRenderer.invoke('optimizer:disk-priority'),
+    diskPriorityApply: (token) => ipcRenderer.invoke('optimizer:disk-priority-apply', token),
+    backupCleaner: () => ipcRenderer.invoke('optimizer:backup-cleaner'),
+    backupCleanerApply: (token) => ipcRenderer.invoke('optimizer:backup-cleaner-apply', token),
+    defragOnBoot: () => ipcRenderer.invoke('optimizer:defrag-on-boot'),
+    defragOnBootApply: (token) => ipcRenderer.invoke('optimizer:defrag-on-boot-apply', token),
+    defragOnBootReset: (token) => ipcRenderer.invoke('optimizer:defrag-on-boot-reset', token),
+    browserHelperObjects: () => ipcRenderer.invoke('optimizer:browser-helper-objects'),
+    bhoApply: (token) => ipcRenderer.invoke('optimizer:bho-apply', token),
+    win10Apply: (id, token) => ipcRenderer.invoke('optimizer:win10-apply', id, token),
+    win10Revert: (id, token) => ipcRenderer.invoke('optimizer:win10-revert', id, token),
+    listTaskManager: () => ipcRenderer.invoke('optimizer:list-task-manager'),
+    killProcess: (pid, token) => ipcRenderer.invoke('optimizer:kill-process', pid, token),
     // Duplicates Finder
     scanDuplicates: () => ipcRenderer.invoke('optimizer:scan-duplicates'),
     deleteDuplicates: (paths, token) => ipcRenderer.invoke('optimizer:delete-duplicates', paths, token),

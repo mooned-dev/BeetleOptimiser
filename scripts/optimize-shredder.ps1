@@ -74,3 +74,5 @@ foreach ($path in $paths) {
 }
 
 Emit-Line @{ event = 'finished'; count = $paths.Count; shredded = $shredded }
+
+& "$PSScriptRoot\optimize-report.ps1" --tool 'Shredder' --action 'shred'

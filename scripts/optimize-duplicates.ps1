@@ -1,11 +1,12 @@
 # optimize-duplicates.ps1 - Duplicates Finder. Companion to the
-# optimizer:scan-duplicates / optimizer:delete-duplicate IPC handlers.
+# optimizer:scan-duplicates / optimizer:delete-duplicates IPC handlers.
 #
 # APPROACH (kept fast on a real user folder tree):
 #   1. Enumerate files under the user's own profile folders only (same
 #      scope + same dev-artifact exclusions as optimize-empty-folders.ps1 -
-#      node_modules/.git etc. pruned, otherwise a dev machine's Desktop
-#      floods the results with meaningless "duplicate" license files).
+#      node_modules/.git/bin/obj etc. pruned, otherwise a dev machine's
+#      Desktop floods the results with meaningless "duplicate" files from
+#      build output or vendored dependencies).
 #   2. Group by file SIZE first - two files can only be byte-identical if
 #      they're the same size, so this cheaply throws out the vast majority
 #      of files (anything with a size no other file shares) before the
@@ -15,6 +16,12 @@
 #      duplicate set.
 #   4. Files smaller than 1 KB are skipped by default (empty/near-empty
 #      files "duplicate" each other constantly and aren't worth reporting).
+#
+# NOTE: like any file scanner, this is a point-in-time snapshot, not a
+# transactionally-consistent one - if a file is being actively written by
+# another process between the size pass and the hash pass, it can drop out
+# of a duplicate set it would otherwise have matched. This only matters on
+# a system with heavy concurrent disk writes in the scanned folders.
 #
 # SAFETY:
 #   - 'scan' only reports (read-only).
@@ -115,3 +122,5 @@ foreach ($sizeGroup in $bySize) {
 }
 
 Emit-Line @{ event = 'finished'; mode = $mode; groups = $dupGroups; files = $dupFiles; reclaimable_bytes = $reclaimableBytes }
+
+& "$PSScriptRoot\optimize-report.ps1" --tool 'Duplicates' --action 'delete'

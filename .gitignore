@@ -13,6 +13,8 @@ out/
 **/__pycache__/
 **/*.pyc
 .venv/
+**/.venv*/
+**/unsloth_compiled_cache/
 
 # LLM training (data + model artifacts never get committed)
 llm-training/data/raw/

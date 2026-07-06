@@ -106,4 +106,6 @@ foreach ($path in $empty) {
   }
 }
 [Console]::Out.WriteLine((([PSCustomObject]@{ event = 'finished'; count = $empty.Count; deleted = $deleted }) | ConvertTo-Json -Compress))
+
+& "$PSScriptRoot\optimize-report.ps1" --tool 'Empty Folders' --action 'clean'
 [Console]::Out.Flush()

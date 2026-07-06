@@ -13,23 +13,33 @@
 // dead click. Modals are ItemListModal instances fed by small static
 // fixtures, since the question-backend is not yet built.
 
-import React, { useState } from 'react';
-import { UserCircle, Info, MagnifyingGlass } from '@phosphor-icons/react';
+import React, { useEffect, useRef, useState } from 'react';
+import { UserCircle, Info, PaperPlaneRight, ChatCircleDots } from '@phosphor-icons/react';
 import InfoBanner from '../shared/InfoBanner.jsx';
 import ItemListModal from '../shared/ItemListModal.jsx';
 import HieroglyphIcon from '../HieroglyphIcon.jsx';
-import { searchArticles, articlesByCategories } from '../../lib/ragSearch.js';
+import { searchArticles } from '../../lib/ragSearch.js';
 
-const CATEGORIES = ['Windows questions', 'Software questions', 'Device questions'];
+// Quick-start prompts shown as chips above the chat input - one per rough
+// topic area, so a new user has something to click instead of a blank box.
+const QUICK_PROMPTS = [
+  'Why is my PC slow to start up?',
+  'How do I free up disk space?',
+  'What does a driver error mean?',
+  'How do Windows updates work?',
+];
 
-// content/rag-articles.js uses its own finer-grained categories (startup,
-// memory, registry, etc.) - this maps the 3 UI-facing buttons onto them so
-// clicking a category shows a relevant subset instead of nothing.
-const CATEGORY_TAGS = {
-  'Windows questions': ['startup', 'registry', 'windows-updates', 'common-errors'],
-  'Software questions': ['browser', 'performance-myths'],
-  'Device questions': ['drivers', 'disk-cleanup', 'memory'],
-};
+// Interim reply engine: client-side keyword search over the 51 built-in
+// articles (content/rag-articles.js), no model needed. This is written as
+// a standalone async function specifically so it's a one-line swap later -
+// once llm-training's fine-tuned model is shipped via node-llama-cpp, this
+// becomes `await window.beetleAPI.chat.ask(question)` instead, and nothing
+// else in this component needs to change.
+async function getAssistantReply(question) {
+  const [best] = searchArticles(question, { limit: 1 });
+  if (best) return best.body;
+  return "I don't have information about that in my Windows troubleshooting knowledge base yet. Try rephrasing your question, or ask our human experts below.";
+}
 
 const LATEST_QUESTIONS = [
   {
@@ -132,23 +142,27 @@ function FooterLink({ c, label, onClick }) {
 }
 
 export default function AskQuestionView({ c, isLight, auth }) {
-  const [activeCategory, setActiveCategory] = useState(null);
-  const [query, setQuery] = useState('');
-  const [results, setResults] = useState(null); // null = nothing searched yet
-  const [searched, setSearched] = useState(false);
+  const [messages, setMessages] = useState([]); // [{role: 'user'|'assistant', text}]
+  const [draft, setDraft] = useState('');
+  const [thinking, setThinking] = useState(false);
+  const threadEndRef = useRef(null);
 
-  function runSearch(q) {
-    setQuery(q);
-    setActiveCategory(null);
-    setSearched(true);
-    setResults(searchArticles(q));
-  }
+  useEffect(() => {
+    threadEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages, thinking]);
 
-  function pickCategory(cat) {
-    setActiveCategory(cat);
-    setQuery('');
-    setSearched(true);
-    setResults(articlesByCategories(CATEGORY_TAGS[cat] || []));
+  async function sendMessage(text) {
+    const trimmed = text.trim();
+    if (!trimmed || thinking) return;
+    setMessages((m) => [...m, { role: 'user', text: trimmed }]);
+    setDraft('');
+    setThinking(true);
+    try {
+      const reply = await getAssistantReply(trimmed);
+      setMessages((m) => [...m, { role: 'assistant', text: reply }]);
+    } finally {
+      setThinking(false);
+    }
   }
 
   // Each modal opens a small ItemListModal with a static fixture.
@@ -281,18 +295,67 @@ export default function AskQuestionView({ c, isLight, auth }) {
             If you have any questions regarding Windows, PC, installed software or devices, ask our experts and receive a comprehensive answer.
           </div>
 
-          {/* Real search over the 51 built-in articles (content/rag-articles.js) -
-              no backend needed, this is instant client-side keyword matching. */}
-          <div style={{ fontSize: 12, fontWeight: 600, color: c.textPrimary, marginBottom: 8 }}>
-            Type your question:
+          {/* Chat thread. Interim engine is client-side keyword search over
+              the 51 built-in articles (content/rag-articles.js) - see
+              getAssistantReply() at the top of this file for the one-line
+              swap to the fine-tuned local model once it ships. */}
+          <div style={{
+            maxWidth: 640, minHeight: 200, maxHeight: 380, overflowY: 'auto',
+            border: `1px solid ${c.border}`, borderRadius: 8, background: c.bgSecondary,
+            padding: 14, marginBottom: 10,
+          }}>
+            {messages.length === 0 ? (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: c.textMuted, fontSize: 12 }}>
+                <ChatCircleDots size={16} />
+                Ask anything about Windows performance, startup, disk space, drivers, updates, or common errors.
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                {messages.map((m, i) => (
+                  <div key={i} style={{ display: 'flex', justifyContent: m.role === 'user' ? 'flex-end' : 'flex-start' }}>
+                    <div style={{
+                      maxWidth: '85%', padding: '8px 12px', borderRadius: 10,
+                      fontSize: 12, lineHeight: 1.5, whiteSpace: 'pre-wrap',
+                      background: m.role === 'user' ? c.accent : c.bgTertiary,
+                      color: m.role === 'user' ? 'white' : c.textPrimary,
+                    }}>{m.text}</div>
+                  </div>
+                ))}
+                {thinking && (
+                  <div style={{ display: 'flex', justifyContent: 'flex-start' }}>
+                    <div style={{
+                      padding: '8px 12px', borderRadius: 10, fontSize: 12,
+                      background: c.bgTertiary, color: c.textMuted, fontStyle: 'italic',
+                    }}>Thinking…</div>
+                  </div>
+                )}
+                <div ref={threadEndRef} />
+              </div>
+            )}
           </div>
+
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, maxWidth: 640, marginBottom: 10 }}>
+            {QUICK_PROMPTS.map((p) => (
+              <button
+                key={p}
+                onClick={() => sendMessage(p)}
+                disabled={thinking}
+                style={{
+                  background: 'transparent', border: `1px solid ${c.border}`, borderRadius: 12,
+                  padding: '4px 10px', fontSize: 11, color: c.textSecondary,
+                  cursor: thinking ? 'default' : 'pointer', fontFamily: 'inherit',
+                }}
+              >{p}</button>
+            ))}
+          </div>
+
           <form
-            onSubmit={(e) => { e.preventDefault(); runSearch(query); }}
-            style={{ display: 'flex', gap: 8, maxWidth: 640, marginBottom: 18 }}
+            onSubmit={(e) => { e.preventDefault(); sendMessage(draft); }}
+            style={{ display: 'flex', gap: 8, maxWidth: 640, marginBottom: 22 }}
           >
             <input
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
               placeholder="e.g. why is my PC slow to start up?"
               style={{
                 flex: 1, padding: '9px 12px', borderRadius: 6,
@@ -302,72 +365,19 @@ export default function AskQuestionView({ c, isLight, auth }) {
             />
             <button
               type="submit"
+              disabled={thinking || !draft.trim()}
               className="theme-pill-btn"
               style={{
                 display: 'flex', alignItems: 'center', gap: 6,
                 background: c.accent, color: 'white', border: 'none',
                 borderRadius: 6, padding: '0 16px', fontSize: 12, fontWeight: 600,
-                cursor: 'pointer', fontFamily: 'inherit',
+                cursor: thinking || !draft.trim() ? 'default' : 'pointer', fontFamily: 'inherit',
+                opacity: thinking || !draft.trim() ? 0.6 : 1,
               }}
             >
-              <MagnifyingGlass size={14} weight="bold" /> Search
+              <PaperPlaneRight size={14} weight="bold" /> Send
             </button>
           </form>
-
-          <div style={{ fontSize: 12, fontWeight: 600, color: c.textPrimary, marginBottom: 8 }}>
-            Or choose a question category:
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxWidth: 640, marginBottom: 18 }}>
-            {CATEGORIES.map(cat => (
-              <button
-                key={cat}
-                onClick={() => pickCategory(cat)}
-                className="scanner-cat-btn"
-                style={{
-                  display: 'block', textAlign: 'center', padding: '11px 16px',
-                  background: cat === activeCategory ? (isLight ? 'rgba(74,46,138,0.06)' : 'rgba(166,120,224,0.10)') : c.bgSecondary,
-                  border: `1px solid ${cat === activeCategory ? c.accent : c.border}`,
-                  borderRadius: 6, cursor: 'pointer', fontFamily: 'inherit',
-                  fontSize: 12, color: c.textPrimary,
-                }}
-              >{cat}</button>
-            ))}
-          </div>
-
-          {searched && (
-            <div style={{ maxWidth: 640, marginBottom: 22 }}>
-              {results.length === 0 ? (
-                <div style={{ fontSize: 12, color: c.textMuted }}>
-                  No matching articles yet - try different words, or{' '}
-                  <button
-                    onClick={() => openModal('ask')}
-                    className="theme-pill-btn"
-                    style={{
-                      background: 'transparent', color: c.accent, border: 'none',
-                      fontSize: 12, textDecoration: 'underline', cursor: 'pointer',
-                      fontFamily: 'inherit', padding: 0,
-                    }}
-                  >ask an expert</button>.
-                </div>
-              ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                  {results.map((a) => (
-                    <button
-                      key={a.slug}
-                      onClick={() => openModal('article', a)}
-                      className="scanner-cat-btn"
-                      style={{
-                        display: 'block', textAlign: 'left', padding: '9px 12px',
-                        background: c.bgSecondary, border: `1px solid ${c.border}`,
-                        borderRadius: 6, cursor: 'pointer', fontFamily: 'inherit',
-                        fontSize: 12, color: c.accent, fontWeight: 600,
-                      }}
-                    >{a.title}</button>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
 
           <div style={{ fontSize: 12, fontWeight: 600, color: c.textPrimary, marginBottom: 4 }}>
             Having problems with our software?

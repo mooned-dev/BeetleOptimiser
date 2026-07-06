@@ -122,3 +122,7 @@ foreach ($id in $defaultCats) {
 
 [Console]::Out.WriteLine((([PSCustomObject]@{ event='finished'; mode=$mode; total_freed_bytes=$totalFreed }) | ConvertTo-Json -Compress))
 [Console]::Out.Flush()
+
+# Audit log - written only after the main 'finished' so the renderer knows
+# the operation completed before it reads the audit log.
+& "$PSScriptRoot\optimize-report.ps1" --tool 'Clean Up' --action 'clean' --files 0 --bytes $totalFreed --note 'junk cleanup'

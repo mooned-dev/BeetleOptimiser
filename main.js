@@ -9,7 +9,7 @@
 // Why not setTitleBarOverlay()? It requires the OS-drawn frame to exist, so
 // it cannot be used together with frame: false. We render our own controls.
 
-const { app, BrowserWindow, ipcMain, shell, net, dialog } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, net, dialog, Tray, Menu, screen } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
@@ -60,6 +60,9 @@ function startTelemetry() {
         const data = JSON.parse(line);
         if (mainWindow && !mainWindow.isDestroyed()) {
           mainWindow.webContents.send('system:telemetry', data);
+        }
+        if (flyoutWindow && !flyoutWindow.isDestroyed()) {
+          flyoutWindow.webContents.send('system:telemetry', data);
         }
       } catch (e) { /* skip a malformed line rather than crash the reader */ }
     }
@@ -137,9 +140,19 @@ function stopTelemetry() {
   }
 }
 
+// Resolves to build/icon.ico if present, else build/icon.png (the only one
+// actually checked into this project right now), else undefined (Electron's
+// own default icon) - shared by both the window and the tray so they match.
+function resolveAppIconPath() {
+  const icoPath = path.join(__dirname, 'build', 'icon.ico');
+  if (fs.existsSync(icoPath)) return icoPath;
+  const pngPath = path.join(__dirname, 'build', 'icon.png');
+  if (fs.existsSync(pngPath)) return pngPath;
+  return undefined;
+}
+
 async function createMainWindow() {
-  let iconPath = path.join(__dirname, 'build', 'icon.ico');
-  if (!fs.existsSync(iconPath)) iconPath = undefined;
+  let iconPath = resolveAppIconPath();
 
   mainWindow = new BrowserWindow({
     width: 1280,
@@ -190,7 +203,199 @@ async function createMainWindow() {
   const port = await startLocalServer();
   mainWindow.loadURL(`http://localhost:${port}/index.html`);
 
+  // Clicking the X hides to the tray instead of quitting - this is how the
+  // real Auslogics BoostSpeed behaves too (it keeps running so its
+  // dashboard telemetry/tray icon stay live), and it's the whole reason a
+  // tray icon exists at all: closing the window shouldn't stop the app.
+  // isQuitting is only set true from the tray's own "Quit" item or the
+  // OS's actual shutdown/before-quit path, so that route still really quits.
+  mainWindow.on('close', (event) => {
+    if (!isQuitting) {
+      event.preventDefault();
+      mainWindow.hide();
+    }
+  });
+
   mainWindow.on('closed', () => { mainWindow = null; });
+}
+
+let tray = null;
+let isQuitting = false;
+
+function showMainWindow() {
+  if (!mainWindow) return;
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  mainWindow.show();
+  mainWindow.focus();
+}
+
+// ----------------------------------------------------------------------
+// Tray flyout: a small popup anchored above the tray icon on hover, showing
+// the live Status widget (Security/Drive/Disk + CPU/RAM/Net + Ask a
+// question) - this used to be a corner overlay baked into the Dashboard
+// tab, but that's not where the real Auslogics BoostSpeed widget lives:
+// it's a tray popup, opened from near the clock, independent of whether
+// the main window is even open. See src/FlyoutApp.jsx for the renderer
+// side and StatusOverlay.jsx's `standalone` prop for the layout tweak.
+//
+// Built lazily (on first hover) rather than at startup, since most
+// sessions may never hover the tray icon at all.
+// ----------------------------------------------------------------------
+let flyoutWindow = null;
+let flyoutHovered = false;
+let hideFlyoutTimer = null;
+// True between creating a brand-new flyout window and its first real
+// 'flyout:resize' report - see the comment on ipcMain's 'flyout:resize'
+// handler below for why the window stays hidden+un-positioned until then.
+let flyoutPendingShow = false;
+
+// Rough placeholder size for the split-second before the renderer's own
+// ResizeObserver (FlyoutApp.jsx) reports the real content size. Never
+// actually shown at this size (see flyoutPendingShow) - it only matters as
+// the window's starting bounds so setSize/setBounds have something to
+// resize FROM.
+const FLYOUT_WIDTH = 348;
+const FLYOUT_HEIGHT = 460;
+
+function createFlyoutWindow() {
+  flyoutWindow = new BrowserWindow({
+    width: FLYOUT_WIDTH,
+    height: FLYOUT_HEIGHT,
+    show: false,
+    frame: false,
+    resizable: false,
+    movable: false,
+    minimizable: false,
+    maximizable: false,
+    fullscreenable: false,
+    skipTaskbar: true,
+    alwaysOnTop: true,
+    transparent: true,
+    backgroundColor: '#00000000',
+    webPreferences: {
+      preload: path.join(__dirname, 'src', 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+    },
+  });
+  flyoutWindow.loadURL(`http://localhost:${localServerPort}/index.html#flyout`);
+
+  // Clicking anywhere outside it closes it - matching every native Windows
+  // tray flyout (volume, network, calendar). The hover-based path below
+  // handles the "mouse just moved away" case; this handles "clicked
+  // elsewhere on the desktop" while the popup still had focus.
+  flyoutWindow.on('blur', () => scheduleHideFlyout(150));
+  flyoutWindow.on('closed', () => { flyoutWindow = null; });
+}
+
+// Positions the flyout centered on the tray icon, flipped above/below
+// depending on which half of the display the tray icon sits in (handles
+// a top-mounted taskbar, not just the common bottom one).
+function positionFlyoutNearTray() {
+  if (!flyoutWindow || !tray) return;
+  const trayBounds = tray.getBounds();
+  const { width, height } = flyoutWindow.getBounds();
+  const display = screen.getDisplayMatching(trayBounds);
+  const wa = display.workArea;
+  const trayCenterY = trayBounds.y + trayBounds.height / 2;
+  const showAbove = trayCenterY > wa.y + wa.height / 2;
+
+  let x = Math.round(trayBounds.x + trayBounds.width / 2 - width / 2);
+  let y = showAbove
+    ? Math.round(trayBounds.y - height - 8)
+    : Math.round(trayBounds.y + trayBounds.height + 8);
+
+  x = Math.min(Math.max(x, wa.x + 4), wa.x + wa.width - width - 4);
+  y = Math.min(Math.max(y, wa.y + 4), wa.y + wa.height - height - 4);
+  flyoutWindow.setBounds({ x, y, width, height });
+}
+
+function scheduleHideFlyout(delayMs = 250) {
+  clearTimeout(hideFlyoutTimer);
+  hideFlyoutTimer = setTimeout(() => {
+    if (flyoutWindow && !flyoutWindow.isDestroyed() && !flyoutHovered) {
+      flyoutWindow.hide();
+    }
+  }, delayMs);
+}
+
+function showFlyout() {
+  clearTimeout(hideFlyoutTimer);
+  if (!flyoutWindow || flyoutWindow.isDestroyed()) {
+    createFlyoutWindow();
+    // First-ever load: wait for FlyoutApp's ResizeObserver to report the
+    // real content size (below) before showing anything, so the popup
+    // never flashes at the placeholder guessed size.
+    flyoutPendingShow = true;
+  } else {
+    positionFlyoutNearTray();
+    flyoutWindow.show();
+  }
+}
+
+ipcMain.on('flyout:hover', (_event, hovered) => {
+  flyoutHovered = !!hovered;
+  if (flyoutHovered) clearTimeout(hideFlyoutTimer);
+  else scheduleHideFlyout();
+});
+
+// FlyoutApp.jsx measures its own rendered content via a ResizeObserver and
+// reports it here - the popup is sized to fit exactly, not to a fixed
+// guess (the original fixed-height version left a large empty area below
+// the actual card, which is what looked "too big").
+ipcMain.on('flyout:resize', (_event, { width, height }) => {
+  if (!flyoutWindow || flyoutWindow.isDestroyed()) return;
+  flyoutWindow.setSize(Math.max(1, Math.ceil(width)), Math.max(1, Math.ceil(height)));
+  positionFlyoutNearTray();
+  if (flyoutPendingShow) {
+    flyoutPendingShow = false;
+    flyoutWindow.show();
+  }
+});
+
+ipcMain.handle('flyout:navigate', (_event, tab) => {
+  if (flyoutWindow && !flyoutWindow.isDestroyed()) flyoutWindow.hide();
+  showMainWindow();
+  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('app:navigate', tab);
+  return { ok: true };
+});
+
+function createTray() {
+  const iconPath = resolveAppIconPath();
+  if (!iconPath) return; // no icon asset available - skip rather than show a blank/broken tray icon
+  tray = new Tray(iconPath);
+  tray.setToolTip('Beetle Optimiser');
+
+  const contextMenu = Menu.buildFromTemplate([
+    { label: 'Show Beetle Optimiser', click: showMainWindow },
+    { type: 'separator' },
+    {
+      label: 'Quit', click: () => {
+        isQuitting = true;
+        app.quit();
+      },
+    },
+  ]);
+  tray.setContextMenu(contextMenu);
+
+  // Left-click on Windows conventionally toggles the window rather than
+  // only opening the context menu (that's what right-click is for).
+  tray.on('click', () => {
+    if (mainWindow && mainWindow.isVisible()) {
+      mainWindow.hide();
+    } else {
+      showMainWindow();
+    }
+  });
+
+  // Hover shows the live-status flyout, matching how Windows' own tray
+  // icons (volume, network, battery) reveal a popup on mouse-over rather
+  // than requiring a click. mouse-enter/mouse-leave are Windows/macOS only
+  // per Electron's Tray docs - unsupported platforms just never fire them,
+  // so the flyout simply never appears there and click-to-open still works.
+  tray.on('mouse-enter', showFlyout);
+  tray.on('mouse-leave', () => scheduleHideFlyout());
 }
 
 // IPC handlers for window controls
@@ -563,6 +768,17 @@ ipcMain.handle('optimizer:enable-scheduled-task', (_, taskPath, taskName, token)
   consumeConfirmation(token, 'enable-scheduled-task');
   return spawnOptimizer('scripts/optimize-scheduled-tasks.ps1', ['enable', '--path', taskPath, '--name', taskName, '--yes']);
 });
+ipcMain.handle('optimizer:create-scheduled-task', (_, name, trigger, command, args, token) => {
+  consumeConfirmation(token, 'create-scheduled-task');
+  const argv = ['create', '--taskname', name, '--trigger', trigger, '--command', command];
+  if (args) argv.push('--cargs', args);
+  argv.push('--yes');
+  return spawnOptimizer('scripts/optimize-scheduled-tasks.ps1', argv);
+});
+ipcMain.handle('optimizer:delete-scheduled-task', (_, taskPath, taskName, token) => {
+  consumeConfirmation(token, 'delete-scheduled-task');
+  return spawnOptimizer('scripts/optimize-scheduled-tasks.ps1', ['delete', '--path', taskPath, '--name', taskName, '--yes']);
+});
 
 // Tweak Manager - real reversible tweaks behind MaintainView's Performance /
 // Stability / Internet categories (Security stays Pro-gated, no backend).
@@ -579,6 +795,15 @@ ipcMain.handle('optimizer:tweaks-revert', (_, id, token) => {
 // Driver check - read-only (installing a driver needs the vendor's own
 // package, out of scope for a safe scripted action).
 ipcMain.handle('optimizer:list-drivers', () => spawnOptimizer('scripts/optimize-drivers.ps1', []));
+ipcMain.handle('optimizer:internet-list', () => spawnOptimizer('scripts/optimize-internet.ps1', ['list']));
+ipcMain.handle('optimizer:internet-optimize', (_, token) => {
+  consumeConfirmation(token, 'internet-optimize');
+  return spawnOptimizer('scripts/optimize-internet.ps1', ['optimize', '--yes']);
+});
+ipcMain.handle('optimizer:internet-reset', (_, token) => {
+  consumeConfirmation(token, 'internet-reset');
+  return spawnOptimizer('scripts/optimize-internet.ps1', ['reset', '--yes']);
+});
 
 // File Shredder - the user picks files via the OS's own native dialog
 // (no way to select "everything in a folder" by accident), then the
@@ -626,6 +851,102 @@ ipcMain.handle('optimizer:clean-junk', (_, token) => {
 // Empty Folder Cleaner - scan only (user profile folders, dev-artifact dirs
 // like node_modules/.git pruned from the walk - see the script's own header).
 ipcMain.handle('optimizer:scan-empty-folders', () => spawnOptimizer('scripts/optimize-empty-folders.ps1', []));
+ipcMain.handle('optimizer:disk-explorer', () => spawnOptimizer('scripts/optimize-disk-explorer.ps1', []));
+ipcMain.handle('optimizer:file-recovery-list', () => spawnOptimizer('scripts/optimize-file-recovery.ps1', ['list']));
+ipcMain.handle('optimizer:file-recovery-restore', (_, paths, destDir, token) => {
+  consumeConfirmation(token, 'file-recovery-restore');
+  if (!Array.isArray(paths) || paths.length === 0) throw new Error('No files given to restore');
+  return spawnOptimizer('scripts/optimize-file-recovery.ps1', ['restore', ...paths, '--dest', destDir, '--yes']);
+});
+ipcMain.handle('optimizer:list-addons', () => spawnOptimizer('scripts/optimize-addons.ps1', []));
+ipcMain.handle('optimizer:win10-list', () => spawnOptimizer('scripts/optimize-win10.ps1', ['list-all']));
+ipcMain.handle('optimizer:wiper-list', () => spawnOptimizer('scripts/optimize-wiper.ps1', ['list']));
+ipcMain.handle('optimizer:wiper-wipe', (_, driveLetter, token) => {
+  consumeConfirmation(token, 'wiper-wipe');
+  return spawnOptimizer('scripts/optimize-wiper.ps1', ['wipe', driveLetter, '--yes']);
+});
+ipcMain.handle('optimizer:slimmer-list', () => spawnOptimizer('scripts/optimize-windows-slimmer.ps1', ['list']));
+ipcMain.handle('optimizer:slimmer-apply', (_, op, token) => {
+  consumeConfirmation(token, 'slimmer-apply');
+  return spawnOptimizer('scripts/optimize-windows-slimmer.ps1', ['apply', '--op', op, '--yes']);
+});
+ipcMain.handle('optimizer:mode-list', () => spawnOptimizer('scripts/optimize-mode-switcher.ps1', ['list']));
+ipcMain.handle('optimizer:mode-set', (_, schemeId, token) => {
+  consumeConfirmation(token, 'mode-set');
+  return spawnOptimizer('scripts/optimize-mode-switcher.ps1', ['set', '--scheme', schemeId, '--yes']);
+});
+ipcMain.handle('optimizer:context-menu-list', () => spawnOptimizer('scripts/optimize-context-menu.ps1', ['list']));
+ipcMain.handle('optimizer:context-menu-disable', (_, id, token) => {
+  consumeConfirmation(token, 'context-menu-disable');
+  return spawnOptimizer('scripts/optimize-context-menu.ps1', ['disable', '--id', id, '--yes']);
+});
+ipcMain.handle('optimizer:context-menu-enable', (_, id, token) => {
+  consumeConfirmation(token, 'context-menu-enable');
+  return spawnOptimizer('scripts/optimize-context-menu.ps1', ['enable', '--id', id, '--yes']);
+});
+ipcMain.handle('optimizer:integrator-list', () => spawnOptimizer('scripts/optimize-integrator.ps1', ['list']));
+ipcMain.handle('optimizer:integrator-add', (_, id, token) => {
+  consumeConfirmation(token, 'integrator-add');
+  return spawnOptimizer('scripts/optimize-integrator.ps1', ['add', '--entry', id, '--yes']);
+});
+ipcMain.handle('optimizer:rescue-list', () => spawnOptimizer('scripts/optimize-rescue.ps1', ['list']));
+ipcMain.handle('optimizer:registry-defrag', () => spawnOptimizer('scripts/optimize-registry-defrag.ps1', ['list']));
+ipcMain.handle('optimizer:registry-defrag-compact', (_, token) => {
+  consumeConfirmation(token, 'registry-defrag-compact');
+  return spawnOptimizer('scripts/optimize-registry-defrag.ps1', ['compact', '--yes']);
+});
+ipcMain.handle('optimizer:action-center', () => spawnOptimizer('scripts/optimize-action-center.ps1', ['list']));
+ipcMain.handle('optimizer:action-center-apply', (_, op, token) => {
+  consumeConfirmation(token, 'action-center-apply');
+  return spawnOptimizer('scripts/optimize-action-center.ps1', ['apply', '--op', op, '--yes']);
+});
+ipcMain.handle('optimizer:debug-log', () => spawnOptimizer('scripts/optimize-debug-log.ps1', []));
+ipcMain.handle('optimizer:disk-priority', () => spawnOptimizer('scripts/optimize-disk-priority.ps1', ['list']));
+ipcMain.handle('optimizer:disk-priority-apply', (_, token) => {
+  consumeConfirmation(token, 'disk-priority-apply');
+  return spawnOptimizer('scripts/optimize-disk-priority.ps1', ['apply', '--yes']);
+});
+ipcMain.handle('optimizer:backup-cleaner', () => spawnOptimizer('scripts/optimize-backup-cleaner.ps1', ['list']));
+ipcMain.handle('optimizer:backup-cleaner-apply', (_, token) => {
+  consumeConfirmation(token, 'backup-cleaner-apply');
+  return spawnOptimizer('scripts/optimize-backup-cleaner.ps1', ['apply', '--yes']);
+});
+ipcMain.handle('optimizer:defrag-on-boot', () => spawnOptimizer('scripts/optimize-defrag-on-boot.ps1', ['list']));
+ipcMain.handle('optimizer:defrag-on-boot-apply', (_, token) => {
+  consumeConfirmation(token, 'defrag-on-boot-apply');
+  return spawnOptimizer('scripts/optimize-defrag-on-boot.ps1', ['apply', '--yes']);
+});
+ipcMain.handle('optimizer:defrag-on-boot-reset', (_, token) => {
+  consumeConfirmation(token, 'defrag-on-boot-reset');
+  return spawnOptimizer('scripts/optimize-defrag-on-boot.ps1', ['reset', '--yes']);
+});
+ipcMain.handle('optimizer:browser-helper-objects', () => spawnOptimizer('scripts/optimize-browser-helper-objects.ps1', ['list']));
+ipcMain.handle('optimizer:bho-apply', (_, token) => {
+  consumeConfirmation(token, 'bho-apply');
+  return spawnOptimizer('scripts/optimize-browser-helper-objects.ps1', ['apply', '--yes']);
+});
+ipcMain.handle('optimizer:integrator-remove', (_, id, token) => {
+  consumeConfirmation(token, 'integrator-remove');
+  return spawnOptimizer('scripts/optimize-integrator.ps1', ['remove', '--entry', id, '--yes']);
+});
+ipcMain.handle('optimizer:win10-apply', (_, id, token) => {
+  consumeConfirmation(token, 'win10-apply');
+  return spawnOptimizer('scripts/optimize-win10.ps1', ['apply:' + id, '--yes']);
+});
+ipcMain.handle('optimizer:win10-revert', (_, id, token) => {
+  consumeConfirmation(token, 'win10-revert');
+  return spawnOptimizer('scripts/optimize-win10.ps1', ['revert:' + id, '--yes']);
+});
+ipcMain.handle('optimizer:list-task-manager', () => spawnOptimizer('scripts/optimize-task-manager.ps1', ['list']));
+ipcMain.handle('optimizer:kill-process', (_, pid, token) => {
+  consumeConfirmation(token, 'kill-process');
+  return spawnOptimizer('scripts/optimize-task-manager.ps1', ['kill', '--pid', String(pid), '--yes']);
+});
+ipcMain.handle('optimizer:pick-folder', async () => {
+  const result = await dialog.showOpenDialog(mainWindow, { title: 'Choose folder', properties: ['openDirectory', 'createDirectory'] });
+  if (result.canceled) return { canceled: true, paths: [] };
+  return { canceled: false, paths: result.filePaths };
+});
 ipcMain.handle('optimizer:clean-empty-folders', (_, token) => {
   consumeConfirmation(token, 'clean-empty-folders');
   return spawnOptimizer('scripts/optimize-empty-folders.ps1', ['--yes']);
@@ -713,6 +1034,7 @@ if (!gotSingleInstanceLock) {
 
   app.whenReady().then(async () => {
     await createMainWindow();
+    createTray();
     startTelemetry();
   });
 
@@ -723,6 +1045,9 @@ if (!gotSingleInstanceLock) {
   });
 
   app.on('before-quit', () => {
+    // Marks the real quit path so the window's own 'close' handler (which
+    // normally hides to the tray instead) lets this one through.
+    isQuitting = true;
     stopTelemetry();
     stopLocalServer();
   });

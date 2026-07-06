@@ -115,7 +115,7 @@ function StatusLine({ c, label, value, ok, onRunScan }) {
   );
 }
 
-export default function StatusOverlay({ c, resolvedCount, onAskQuestion, onNavigate }) {
+export default function StatusOverlay({ c, resolvedCount, onAskQuestion, onNavigate, standalone = false }) {
   const telemetry = useTelemetry();
   const [installAt] = useState(getOrInitInstallAt);
 
@@ -147,7 +147,15 @@ export default function StatusOverlay({ c, resolvedCount, onAskQuestion, onNavig
   const netMax = Math.max(1, ...netHist.current);
 
   return (
-    <div style={{
+    <div style={standalone ? {
+      width: 320,
+      background: c.bgSecondary,
+      border: `1px solid ${c.border}`,
+      borderRadius: 8,
+      padding: '12px 14px',
+      boxShadow: '0 4px 20px rgba(0,0,0,0.4)',
+      fontSize: 11,
+    } : {
       position: 'absolute', bottom: 100, right: 24,
       width: 320,
       background: c.bgSecondary,

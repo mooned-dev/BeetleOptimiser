@@ -126,3 +126,5 @@ foreach ($vol in $drives) {
 }
 
 Emit-Line @{event='finished'; mode=$mode}
+
+& "$PSScriptRoot\optimize-report.ps1" --tool 'Optimize' --action 'defrag'

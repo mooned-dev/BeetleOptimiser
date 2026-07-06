@@ -13,7 +13,7 @@ export const NAV_ITEMS = [
   { id: 'pc',          label: 'PC',                    Icon: Star,                action: 'tab:Dashboard' },
   { id: 'questions',   label: 'Questions',             Icon: Question,            action: 'tab:Ask a Question' },
   { id: 'advisor',     label: 'Advisor',               Icon: ChatCircleDots,      action: 'tab:Advisor' },
-  { id: 'reports',     label: 'Reports',               Icon: DownloadSimple,      action: 'tab:Scanner' },
+  { id: 'reports',     label: 'Reports',               Icon: DownloadSimple,      action: 'tab:Reports' },
   { id: 'maintenance', label: 'Automatic Maintenance', Icon: CalendarBlank,       action: 'tab:Maintain' },
-  { id: 'rescue',      label: 'Rescue Center',         Icon: Lifebuoy,            action: 'tab:Protect' },
+  { id: 'rescue',      label: 'Rescue Center',         Icon: Lifebuoy,            action: 'tab:Care Center' },
 ];

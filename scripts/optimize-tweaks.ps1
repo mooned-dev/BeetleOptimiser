@@ -118,3 +118,5 @@ try {
 }
 
 Emit-Line @{ event = 'finished'; mode = $mode }
+
+& "$PSScriptRoot\optimize-report.ps1" --tool 'Tweaks' --action 'toggle'

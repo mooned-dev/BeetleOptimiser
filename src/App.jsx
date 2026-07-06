@@ -12,7 +12,7 @@
 // rejected by main.js instead of running unchecked. Login/auth is
 // owned by useAuth() in TitleBar and is intentionally NOT touched here.
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { getColors } from './lib/colors.js';
 import { useTheme } from './hooks/useTheme.js';
 import { useActiveTab } from './hooks/useActiveTab.js';
@@ -32,6 +32,10 @@ import OptimizeView from './components/tabs/OptimizeView.jsx';
 import ProtectView from './components/tabs/ProtectView.jsx';
 import MaintainView from './components/tabs/MaintainView.jsx';
 import AskQuestionView from './components/tabs/AskQuestionView.jsx';
+import MyTasksView from './components/tabs/MyTasksView.jsx';
+import ReportsView from './components/tabs/ReportsView.jsx';
+import Win10ProtectorView from './components/tabs/Win10ProtectorView.jsx';
+import CareCenterView from './components/tabs/CareCenterView.jsx';
 import ConfirmModal from './components/shared/ConfirmModal.jsx';
 import ItemListModal from './components/shared/ItemListModal.jsx';
 
@@ -79,7 +83,26 @@ export default function App() {
   // instance for both the clean-junk confirm and the registry-repair confirm.
   const [scanBusy, setScanBusy] = useState(false);
   const [scanTotals, setScanTotals] = useState(null);          // { items, totalFiles, totalBytes }
-  const [resolvedCount, setResolvedCount] = useState(null);    // total items the last cleanup resolved (drives the StatusOverlay header)
+  const [resolvedCount, setResolvedCount] = useState(null);    // total items the last cleanup resolved (drives the tray flyout's header)
+
+  // The tray flyout (FlyoutApp.jsx) is a SEPARATE BrowserWindow/renderer, so
+  // it can't read this component's React state directly. Both windows load
+  // the same origin though, so localStorage is shared - writing here plus a
+  // 'storage' listener over there (which fires in OTHER same-origin windows,
+  // never the one that wrote it) is enough to keep the flyout's header live
+  // without a dedicated IPC round-trip for something this minor.
+  useEffect(() => {
+    try {
+      if (resolvedCount != null) localStorage.setItem('beetle-resolved-count', String(resolvedCount));
+    } catch { /* localStorage unavailable - flyout just shows "—" */ }
+  }, [resolvedCount]);
+
+  // Buttons inside the tray flyout (Ask a question / Run Scan / nav icons)
+  // can't switch this window's tab directly either - they ask main.js to
+  // focus this window and relay which tab, via window.beetleAPI.system.onNavigate.
+  useEffect(() => {
+    return window?.beetleAPI?.system?.onNavigate?.((tab) => setActiveTab(tab));
+  }, [setActiveTab]);
   const [scanResult, setScanResult] = useState(null);
   const [scanConfirmOpen, setScanConfirmOpen] = useState(false);
 
@@ -140,6 +163,96 @@ export default function App() {
   const [duplicateBusyId, setDuplicateBusyId] = useState(null);
   const [duplicateToDelete, setDuplicateToDelete] = useState(null);
   const [duplicatesResult, setDuplicatesResult] = useState(null);
+
+  // Internet Speed Up
+  const [internetOpen, setInternetOpen] = useState(false);
+  const [internetData, setInternetData] = useState(null);
+  const [internetBusy, setInternetBusy] = useState(false);
+  const [internetResult, setInternetResult] = useState(null);
+
+  // Disk Explorer
+  const [diskExpOpen, setDiskExpOpen] = useState(false);
+  const [diskExpRows, setDiskExpRows] = useState([]);
+  const [diskExpBusy, setDiskExpBusy] = useState(false);
+
+  // Task Manager
+  const [taskMgrOpen, setTaskMgrOpen] = useState(false);
+  const [taskMgrRows, setTaskMgrRows] = useState([]);
+  const [taskMgrBusy, setTaskMgrBusy] = useState(false);
+  const [taskMgrConfirmKill, setTaskMgrConfirmKill] = useState(null);
+
+  // Add-ons Manager
+  const [addonsOpen, setAddonsOpen] = useState(false);
+  const [addonsRows, setAddonsRows] = useState([]);
+  const [addonsBusy, setAddonsBusy] = useState(false);
+
+  // File Recovery
+  const [fileRecoveryOpen, setFileRecoveryOpen] = useState(false);
+  const [fileRecoveryRows, setFileRecoveryRows] = useState([]);
+  const [fileRecoveryBusy, setFileRecoveryBusy] = useState(false);
+
+  // Free Space Wiper
+  const [wiperOpen, setWiperOpen] = useState(false);
+  const [wiperDrives, setWiperDrives] = useState([]);
+  const [wiperBusy, setWiperBusy] = useState(false);
+  const [wiperConfirm, setWiperConfirm] = useState(null);
+  const [wiperPasses, setWiperPasses] = useState(1);
+  const [wiperResult, setWiperResult] = useState(null);
+
+  // Windows Slimmer
+  const [slimmerOpen, setSlimmerOpen] = useState(false);
+  const [slimmerOps, setSlimmerOps] = useState([]);
+  const [slimmerBusy, setSlimmerBusy] = useState(false);
+  const [slimmerConfirm, setSlimmerConfirm] = useState(null);
+
+  // Mode Switcher
+  const [modesOpen, setModesOpen] = useState(false);
+  const [modesList, setModesList] = useState([]);
+  const [modesBusy, setModesBusy] = useState(false);
+
+  // Context Menu
+  const [ctxOpen, setCtxOpen] = useState(false);
+  const [ctxList, setCtxList] = useState([]);
+  const [ctxBusy, setCtxBusy] = useState(false);
+
+  // Integrator
+  const [integOpen, setIntegOpen] = useState(false);
+  const [integList, setIntegList] = useState([]);
+  const [integBusy, setIntegBusy] = useState(false);
+
+  // Registry Defrag
+  const [regDefragOpen, setRegDefragOpen] = useState(false);
+  const [regDefragHives, setRegDefragHives] = useState([]);
+  const [regDefragBusy, setRegDefragBusy] = useState(false);
+
+  // Action Center
+  const [actionCenterOpen, setActionCenterOpen] = useState(false);
+  const [actionCenterOps, setActionCenterOps] = useState([]);
+  const [actionCenterBusy, setActionCenterBusy] = useState(false);
+  const [actionCenterConfirm, setActionCenterConfirm] = useState(null);
+
+  // Debug log
+  const [debugResult, setDebugResult] = useState(null);
+
+  // Disk Priority
+  const [diskPrioOpen, setDiskPrioOpen] = useState(false);
+  const [diskPrioProfiles, setDiskPrioProfiles] = useState([]);
+  const [diskPrioBusy, setDiskPrioBusy] = useState(false);
+
+  // Backup Cleaner
+  const [backupCleanerOpen, setBackupCleanerOpen] = useState(false);
+  const [backupCleanerTargets, setBackupCleanerTargets] = useState([]);
+  const [backupCleanerBusy, setBackupCleanerBusy] = useState(false);
+
+  // Defrag on Next Boot
+  const [defragBootOpen, setDefragBootOpen] = useState(false);
+  const [defragBootState, setDefragBootState] = useState(null);
+  const [defragBootBusy, setDefragBootBusy] = useState(false);
+
+  // Browser Helper Objects
+  const [bhoOpen, setBhoOpen] = useState(false);
+  const [bhoList, setBhoList] = useState([]);
+  const [bhoBusy, setBhoBusy] = useState(false);
 
   // -------------------------------------------------------------------
   // Handlers
@@ -409,6 +522,399 @@ export default function App() {
     }
   }
 
+  // Free Space Wiper
+  async function handleWiperClick() {
+    if (!window.beetleAPI) return;
+    setWiperOpen(true); setWiperBusy(true); setWiperResult(null);
+    try {
+      const result = await window.beetleAPI.optimizer.wiperList();
+      const rows = (result.items || []).filter((i) => i.event === 'drive').map((i) => i.item);
+      setWiperDrives(rows);
+    } catch (e) {
+      setWiperResult(`Could not list drives: ${e.message || e}`);
+    } finally { setWiperBusy(false); }
+  }
+  async function handleConfirmWipe() {
+    if (!wiperConfirm) return;
+    setWiperBusy(true);
+    try {
+      const token = await window.beetleAPI.optimizer.requestConfirm('wiper-wipe');
+      const result = await window.beetleAPI.optimizer.wiperWipe(wiperConfirm, token);
+      const err = (result.items || []).find((i) => i.event === 'error');
+      if (err) {
+        setWiperResult(`Wipe failed: ${err.reason}`);
+      } else {
+        setWiperResult(`Wiped drive ${wiperConfirm} (${wiperPasses} pass${wiperPasses > 1 ? 'es' : ''}). This can take several hours.`);
+      }
+      setWiperConfirm(null);
+    } catch (e) {
+      setWiperResult(`Wipe failed: ${e.message || e}`);
+    } finally { setWiperBusy(false); }
+  }
+
+  // Windows Slimmer
+  async function handleSlimmerClick() {
+    if (!window.beetleAPI) return;
+    setSlimmerOpen(true); setSlimmerBusy(true);
+    try {
+      const result = await window.beetleAPI.optimizer.slimmerList();
+      const rows = (result.items || []).filter((i) => i.event === 'op').map((i) => i.item);
+      setSlimmerOps(rows);
+    } catch (e) {
+      setSlimmerOps([{ id: 'error', label: `Error: ${e.message || e}` }]);
+    } finally { setSlimmerBusy(false); }
+  }
+  async function handleConfirmSlimmer() {
+    if (!slimmerConfirm) return;
+    setSlimmerBusy(true);
+    try {
+      const token = await window.beetleAPI.optimizer.requestConfirm('slimmer-apply');
+      const result = await window.beetleAPI.optimizer.slimmerApply(slimmerConfirm.id, token);
+      const err = (result.items || []).find((i) => i.event === 'error');
+      if (err) setWiperResult(`Slimmer: ${err.reason}`);
+      setSlimmerConfirm(null);
+      await handleSlimmerClick();
+    } catch (e) {
+      setSlimmerBusy(false);
+    }
+  }
+
+  // Mode Switcher
+  async function handleModesClick() {
+    if (!window.beetleAPI) return;
+    setModesOpen(true); setModesBusy(true);
+    try {
+      const result = await window.beetleAPI.optimizer.modeList();
+      const rows = (result.items || []).filter((i) => i.event === 'scheme').map((i) => i.item);
+      setModesList(rows);
+    } catch (e) {
+      setModesList([{ id: 'error', label: `Error: ${e.message || e}`, active: false }]);
+    } finally { setModesBusy(false); }
+  }
+  async function handleSetMode(schemeId) {
+    setModesBusy(true);
+    try {
+      const token = await window.beetleAPI.optimizer.requestConfirm('mode-set');
+      await window.beetleAPI.optimizer.modeSet(schemeId, token);
+      await handleModesClick();
+    } catch (e) {
+      setModesBusy(false);
+    }
+  }
+
+  // Context Menu Manager
+  async function handleCtxClick() {
+    if (!window.beetleAPI) return;
+    setCtxOpen(true); setCtxBusy(true);
+    try {
+      const result = await window.beetleAPI.optimizer.contextMenuList();
+      const rows = (result.items || []).filter((i) => i.event === 'handler').map((i) => i.item);
+      setCtxList(rows);
+    } catch (e) {
+      setCtxList([{ id: 'error', name: `Error: ${e.message || e}`, location: '', value: '', disabled: false }]);
+    } finally { setCtxBusy(false); }
+  }
+  async function handleToggleContext(entry, action) {
+    setCtxBusy(true);
+    try {
+      const token = await window.beetleAPI.optimizer.requestConfirm(action === 'disable' ? 'context-menu-disable' : 'context-menu-enable');
+      const ipcName = action === 'disable' ? 'contextMenuDisable' : 'contextMenuEnable';
+      await window.beetleAPI.optimizer[ipcName](entry.id, token);
+      await handleCtxClick();
+    } catch (e) { setCtxBusy(false); }
+  }
+
+  // Integrator
+  async function handleIntegClick() {
+    if (!window.beetleAPI) return;
+    setIntegOpen(true); setIntegBusy(true);
+    try {
+      const result = await window.beetleAPI.optimizer.integratorList();
+      const rows = (result.items || []).filter((i) => i.event === 'entry').map((i) => i.item);
+      setIntegList(rows);
+    } catch (e) {
+      setIntegList([{ id: 'error', label: `Error: ${e.message || e}`, installed: false }]);
+    } finally { setIntegBusy(false); }
+  }
+  async function handleToggleIntegrator(entry, action) {
+    setIntegBusy(true);
+    try {
+      const token = await window.beetleAPI.optimizer.requestConfirm(action === 'add' ? 'integrator-add' : 'integrator-remove');
+      const ipcName = action === 'add' ? 'integratorAdd' : 'integratorRemove';
+      await window.beetleAPI.optimizer[ipcName](entry.id, token);
+      await handleIntegClick();
+    } catch (e) { setIntegBusy(false); }
+  }
+
+  // Disk Priority
+  async function handleDiskPriorityClick() {
+    if (!window.beetleAPI) return;
+    setDiskPrioOpen(true); setDiskPrioBusy(true);
+    try {
+      const r = await window.beetleAPI.optimizer.diskPriority();
+      setDiskPrioProfiles((r.items || []).filter(i => i.event === 'profile').map(i => i.item));
+    } catch (e) {
+      setDiskPrioProfiles([]);
+    } finally { setDiskPrioBusy(false); }
+  }
+  async function handleDiskPriorityApply() {
+    setDiskPrioBusy(true);
+    try {
+      const token = await window.beetleAPI.optimizer.requestConfirm('disk-priority-apply');
+      await window.beetleAPI.optimizer.diskPriorityApply(token);
+      await handleDiskPriorityClick();
+    } catch (e) { setDiskPrioBusy(false); }
+  }
+
+  // Backup Cleaner
+  async function handleBackupCleanerClick() {
+    if (!window.beetleAPI) return;
+    setBackupCleanerOpen(true); setBackupCleanerBusy(true);
+    try {
+      const r = await window.beetleAPI.optimizer.backupCleaner();
+      setBackupCleanerTargets((r.items || []).filter(i => i.event === 'cleanup_target').map(i => i.item));
+    } catch (e) {
+      setBackupCleanerTargets([]);
+    } finally { setBackupCleanerBusy(false); }
+  }
+  async function handleBackupCleanerApply() {
+    setBackupCleanerBusy(true);
+    try {
+      const token = await window.beetleAPI.optimizer.requestConfirm('backup-cleaner-apply');
+      const r = await window.beetleAPI.optimizer.backupCleanerApply(token);
+      const d = (r.items || []).find(i => i.event === 'done');
+      await handleBackupCleanerClick();
+      setDebugResult(`Backup cleaner freed ${(d?.total_freed_bytes / 1024 / 1024).toFixed(1) || 0} MB`);
+    } catch (e) { setBackupCleanerBusy(false); }
+  }
+
+  // Defrag on Next Boot
+  async function handleDefragBootClick() {
+    if (!window.beetleAPI) return;
+    setDefragBootOpen(true); setDefragBootBusy(true);
+    try {
+      const r = await window.beetleAPI.optimizer.defragOnBoot();
+      setDefragBootState((r.items || []).find(i => i.event === 'state').item);
+    } catch (e) {
+      setDefragBootState(null);
+    } finally { setDefragBootBusy(false); }
+  }
+  async function handleDefragBootApply() {
+    setDefragBootBusy(true);
+    try {
+      const token = await window.beetleAPI.optimizer.requestConfirm('defrag-on-boot-apply');
+      await window.beetleAPI.optimizer.defragOnBootApply(token);
+      await handleDefragBootClick();
+    } catch (e) { setDefragBootBusy(false); }
+  }
+
+  // Browser Helper Objects
+  async function handleBhoClick() {
+    if (!window.beetleAPI) return;
+    setBhoOpen(true); setBhoBusy(true);
+    try {
+      const r = await window.beetleAPI.optimizer.browserHelperObjects();
+      setBhoList((r.items || []).filter(i => i.event === 'bho').map(i => i.item));
+    } catch (e) {
+      setBhoList([]);
+    } finally { setBhoBusy(false); }
+  }
+  async function handleBhoApply() {
+    setBhoBusy(true);
+    try {
+      const token = await window.beetleAPI.optimizer.requestConfirm('bho-apply');
+      const r = await window.beetleAPI.optimizer.bhoApply(token);
+      const d = (r.items || []).find(i => i.event === 'done');
+      await handleBhoClick();
+      setDebugResult(`Removed ${d?.removed || 0} orphan browser helper objects`);
+    } catch (e) { setBhoBusy(false); }
+  }
+
+  // Registry Defrag (hive listing + compact button)
+  async function handleRegDefragClick() {
+    if (!window.beetleAPI) return;
+    setRegDefragOpen(true); setRegDefragBusy(true);
+    try {
+      const result = await window.beetleAPI.optimizer.registryDefrag();
+      const rows = (result.items || []).filter((i) => i.event === 'hive').map((i) => i.item);
+      setRegDefragHives(rows);
+    } catch (e) {
+      setRegDefragHives([{ name: 'error', size_kb: 0, file_path: e.message || 'Error' }]);
+    } finally { setRegDefragBusy(false); }
+  }
+  async function handleRegDefragCompact() {
+    setRegDefragBusy(true);
+    try {
+      const token = await window.beetleAPI.optimizer.requestConfirm('registry-defrag-compact');
+      const result = await window.beetleAPI.optimizer.registryDefragCompact(token);
+      const err = (result.items || []).find((i) => i.event === 'error');
+      if (err) setDebugResult(`Defrag: ${err.reason}`);
+      await handleRegDefragClick();
+    } catch (e) { setRegDefragBusy(false); }
+  }
+
+  // Action Center cleaner
+  async function handleActionCenterClick() {
+    if (!window.beetleAPI) return;
+    setActionCenterOpen(true); setActionCenterBusy(true);
+    try {
+      const result = await window.beetleAPI.optimizer.actionCenterList();
+      const rows = (result.items || []).filter((i) => i.event === 'op').map((i) => i.item);
+      setActionCenterOps(rows);
+    } catch (e) {
+      setActionCenterOps([{ id: 'error', label: `Error: ${e.message || e}`, description: '', current_value: '', applied_value: '' }]);
+    } finally { setActionCenterBusy(false); }
+  }
+  async function handleConfirmActionCenter() {
+    if (!actionCenterConfirm) return;
+    setActionCenterBusy(true);
+    try {
+      const token = await window.beetleAPI.optimizer.requestConfirm('action-center-apply');
+      await window.beetleAPI.optimizer.actionCenterApply(actionCenterConfirm.id, token);
+      setActionCenterConfirm(null);
+      await handleActionCenterClick();
+    } catch (e) { setActionCenterBusy(false); }
+  }
+
+  // Debug log
+  async function handleDebugLogClick() {
+    if (!window.beetleAPI) return;
+    setActionCenterBusy(false);
+    try {
+      const result = await window.beetleAPI.optimizer.debugLog();
+      const f = (result.items || []).find((i) => i.event === 'file');
+      if (f) {
+        setDebugResult(f.zip_path);
+        // Auto-open the folder containing the zip
+        try { await window.beetleAPI.system.openExternal('/select,' + f.zip_path); }
+        catch (e) {}
+      } else {
+        setDebugResult(`Could not generate debug bundle`);
+      }
+    } catch (e) {
+      setDebugResult(`Failed: ${e.message || e}`);
+    }
+  }
+
+  // Internet Speed Up handler
+  async function handleInternetClick() {
+    if (!window.beetleAPI) { setInternetResult('Not available outside the packaged app.'); return; }
+    setInternetResult(null);
+    setInternetOpen(true);
+    setInternetBusy(true);
+    try {
+      const result = await window.beetleAPI.optimizer.internetList();
+      const t = (result.items || []).find((i) => i.event === 'tcp_global');
+      const ad = (result.items || []).filter((i) => i.event === 'adapter').map((i) => i.item);
+      const at = (result.items || []).find((i) => i.event === 'autotuning');
+      const dns = (result.items || []).find((i) => i.event === 'dns_cache_max_ttl');
+      setInternetData({ raw: t ? t.raw : '', adapters: ad, autotuning: at, dns });
+    } catch (e) {
+      setInternetResult(`Could not read settings: ${e.message || e}`);
+    } finally {
+      setInternetBusy(false);
+    }
+  }
+
+  async function handleInternetOptimize() {
+    setInternetBusy(true);
+    try {
+      const token = await window.beetleAPI.optimizer.requestConfirm('internet-optimize');
+      await window.beetleAPI.optimizer.internetOptimize(token);
+      setInternetResult('Optimized. Restart any open TCP sessions for changes to take effect.');
+      await handleInternetClick();
+    } catch (e) {
+      setInternetResult(`Optimize failed: ${e.message || e}`);
+    } finally {
+      setInternetBusy(false);
+    }
+  }
+
+  async function handleInternetReset() {
+    setInternetBusy(true);
+    try {
+      const token = await window.beetleAPI.optimizer.requestConfirm('internet-reset');
+      await window.beetleAPI.optimizer.internetReset(token);
+      setInternetResult('Reset to Windows default TCP behavior.');
+      await handleInternetClick();
+    } catch (e) {
+      setInternetResult(`Reset failed: ${e.message || e}`);
+    } finally {
+      setInternetBusy(false);
+    }
+  }
+
+  // Disk Explorer handler
+  async function handleDiskExplorerClick() {
+    if (!window.beetleAPI) return;
+    setDiskExpOpen(true);
+    setDiskExpBusy(true);
+    try {
+      const result = await window.beetleAPI.optimizer.diskExplorer();
+      const rows = (result.items || [])
+        .filter((i) => i.event === 'folder')
+        .map((i) => i.item)
+        .sort((a, b) => b.bytes - a.bytes)
+        .slice(0, 100);
+      setDiskExpRows(rows);
+    } catch (e) {
+      setDiskExpRows([{ name: 'Error', bytes: 0, path: '', files: 0, error: e.message || e }]);
+    } finally {
+      setDiskExpBusy(false);
+    }
+  }
+
+  // Task Manager handler
+  async function handleTaskManagerClick() {
+    if (!window.beetleAPI) return;
+    setTaskMgrOpen(true);
+    setTaskMgrBusy(true);
+    try {
+      const result = await window.beetleAPI.optimizer.listTaskManager();
+      const rows = (result.items || [])
+        .filter((i) => i.event === 'process')
+        .map((i) => i.item)
+        .slice(0, 100);
+      setTaskMgrRows(rows);
+    } catch (e) {
+      setTaskMgrRows([{ pid: -1, name: 'Error', cpu: 0, ram_bytes: 0 }]);
+    } finally {
+      setTaskMgrBusy(false);
+    }
+  }
+
+  async function handleConfirmKillProcess() {
+    if (!taskMgrConfirmKill) return;
+    setTaskMgrBusy(true);
+    try {
+      const token = await window.beetleAPI.optimizer.requestConfirm('kill-process');
+      await window.beetleAPI.optimizer.killProcess(taskMgrConfirmKill.pid, token);
+      setTaskMgrConfirmKill(null);
+      await handleTaskManagerClick();
+    } catch (e) {
+      setTaskMgrBusy(false);
+      // keep the row - kill failed
+    }
+  }
+
+  // Add-ons Manager handler
+  async function handleAddonsClick() {
+    if (!window.beetleAPI) return;
+    setAddonsOpen(true);
+    setAddonsBusy(true);
+    try {
+      const result = await window.beetleAPI.optimizer.listAddons();
+      const rows = (result.items || [])
+        .filter((i) => i.event === 'addon')
+        .map((i) => i.item);
+      setAddonsRows(rows);
+    } catch (e) {
+      setAddonsRows([{ name: `Error: ${e.message || e}`, id: '', browser: '', profile: '', version: '', enabled: false }]);
+    } finally {
+      setAddonsBusy(false);
+    }
+  }
+
   async function handleConfirmRegistryRepair() {
     setRegistryBusy(true);
     try {
@@ -435,8 +941,23 @@ export default function App() {
       case 'browser':   return handleScanClick();
       case 'driver':    return handleDriverClick();
       case 'duplicate': return handleDuplicatesClick();
-      case 'add':       return setAddToolOpen(true); // not wired
-      default:         return;
+      case 'add':        return setAddToolOpen(true);
+      case 'internet':   return handleInternetClick();
+      case 'disk-explorer': return handleDiskExplorerClick();
+      case 'task-manager': return handleTaskManagerClick();
+      case 'addons':     return handleAddonsClick();
+      case 'wiper':      return handleWiperClick();
+      case 'slimmer':    return handleSlimmerClick();
+      case 'mode':       return handleModesClick();
+      case 'integrator':    return handleIntegClick();
+      case 'regdefrag':     return handleRegDefragClick();
+      case 'actioncenter':  return handleActionCenterClick();
+      case 'debuglog':      return handleDebugLogClick();
+      case 'diskpriority':  return handleDiskPriorityClick();
+      case 'backupcleaner': return handleBackupCleanerClick();
+      case 'defragboot':    return handleDefragBootClick();
+      case 'bho':           return handleBhoClick();
+      default:           return;
     }
   }
 
@@ -474,9 +995,6 @@ export default function App() {
                 onScan={handleScanClick}
                 onSeeReport={handleSeeReport}
                 onTileClick={handleTileClick}
-                onAskQuestion={() => setActiveTab('Ask a Question')}
-                resolvedCount={resolvedCount}
-                onNavigate={setActiveTab}
               />
               {scanResult && (
                 <div style={{
@@ -528,6 +1046,14 @@ export default function App() {
             if (action === 'promo') return setScanResult('BoostSpeed Portable - download from auslogics.com');
             return null;
           }} />
+        ) : activeTab === 'My Tasks' ? (
+          <MyTasksView c={c} isLight={isLight} />
+        ) : activeTab === 'Reports' ? (
+          <ReportsView c={c} isLight={isLight} onNavigate={setActiveTab} />
+        ) : activeTab === 'Win10 Protector' ? (
+          <Win10ProtectorView c={c} isLight={isLight} />
+        ) : activeTab === 'Care Center' ? (
+          <CareCenterView c={c} isLight={isLight} />
         ) : activeTab === 'Ask a Question' ? (
           <AskQuestionView c={c} isLight={isLight} auth={auth} />
         ) : (
@@ -712,6 +1238,385 @@ export default function App() {
           border: `1px solid ${c.border}`, borderRadius: 6,
         }}>{registryResult}</div>
       )}
+
+      {/* INTERNET SPEED UP */}
+      <ItemListModal
+        c={c}
+        open={internetOpen}
+        title="Internet Speed Up"
+        emptyText={internetBusy ? 'Reading TCP settings…' : 'No settings yet.'}
+        items={[
+          ...((internetData && internetData.adapters) || []).map((a) => ({
+            id: 'ad:' + a.if_index, primary: a.name, secondary: `${a.status} · ${a.speed} · ${a.media}`,
+          })),
+          ...((internetData && internetData.autotuning) ? [{
+            id: 'at', primary: 'Auto-Tuning Level', secondary: `netsh value: ${internetData.autotuning.level === null ? '(default)' : internetData.autotuning.level}`,
+          }] : []),
+          ...((internetData && internetData.dns) ? [{
+            id: 'dns', primary: 'DNS Cache TTL', secondary: `${internetData.dns.limit_seconds || '(default)'} seconds`,
+          }] : []),
+          { id: 'opt', primary: 'Optimize', secondary: 'Normal TCP auto-tuning, enable RFC 1323 window scaling, 24h DNS TTL, disable NetBIOS over TCP/IP' },
+          { id: 'rst', primary: 'Reset', secondary: 'Restore Windows default TCP behavior' },
+        ]}
+        actionLabel="Run"
+        onAction={(item) => {
+          if (item.id === 'opt') handleInternetOptimize();
+          else if (item.id === 'rst') handleInternetReset();
+          else if ((item.id || '').startsWith('ad:')) {} // adapter display rows - no-op clickable, but keep
+          else setInternetOpen(false);
+        }}
+        onClose={() => setInternetOpen(false)}
+      />
+      {internetResult && (
+        <div style={{ position: 'fixed', bottom: 60, left: 620, zIndex: 30, fontSize: 11, color: c.textSecondary, background: c.bgSecondary, padding: '6px 10px', border: `1px solid ${c.border}`, borderRadius: 6 }}>
+          {internetResult}
+        </div>
+      )}
+
+      {/* DISK EXPLORER */}
+      <ItemListModal
+        c={c}
+        open={diskExpOpen}
+        title="Disk Explorer - largest folders"
+        emptyText={diskExpBusy ? 'Walking folders…' : 'No folders scanned.'}
+        items={diskExpRows.map((r) => {
+          const sizeMb = r.bytes ? (r.bytes / 1024 / 1024).toFixed(1) : '?';
+          return {
+            id: r.path,
+            primary: r.name,
+            secondary: `${sizeMb} MB · ${(r.files || 0).toLocaleString()} files · ${r.path}`,
+          };
+        })}
+        actionLabel="—"
+        onAction={() => {}}
+        onClose={() => setDiskExpOpen(false)}
+      />
+
+      {/* TASK MANAGER */}
+      <ItemListModal
+        c={c}
+        open={taskMgrOpen}
+        title="Task Manager - top 100 by RAM"
+        emptyText={taskMgrBusy ? 'Listing processes…' : 'No processes yet.'}
+        items={taskMgrRows.map((p) => ({
+          id: 'p:' + p.pid,
+          primary: `${p.name}.exe · PID ${p.pid}`,
+          secondary: `RAM ${(p.ram_bytes / 1024 / 1024).toFixed(1)} MB · CPU ${p.cpu}s · ${p.handles} handles · ${p.threads} threads`,
+          actionLabelOverride: 'End task',
+        }))}
+        actionLabel="End task"
+        busyId={taskMgrBusy ? '__busy__' : null}
+        onAction={(item) => {
+          const pid = Number(String(item.id).slice(2));
+          setTaskMgrConfirmKill({ pid });
+        }}
+        onClose={() => setTaskMgrOpen(false)}
+      />
+      <ConfirmModal
+        c={c}
+        open={!!taskMgrConfirmKill}
+        busy={taskMgrBusy}
+        title="End this process?"
+        message="Forces the process to terminate without confirmation. Unsaved data in that process will be lost."
+        details={taskMgrConfirmKill ? `PID ${taskMgrConfirmKill.pid}` : null}
+        confirmLabel="End task"
+        onConfirm={handleConfirmKillProcess}
+        onCancel={() => setTaskMgrConfirmKill(null)}
+      />
+
+      {/* ADD-ONS MANAGER */}
+      <ItemListModal
+        c={c}
+        open={addonsOpen}
+        title="Browser Add-ons"
+        emptyText={addonsBusy ? 'Listing extensions…' : 'No add-ons installed.'}
+        items={addonsRows.map((a) => ({
+          id: a.browser + ':' + a.id,
+          primary: a.name + (a.enabled ? '' : ' (disabled)'),
+          secondary: `${a.browser} · ${a.profile} · v${a.version} · ${a.id}`,
+        }))}
+        actionLabel="—"
+        onAction={() => {}}
+        onClose={() => setAddonsOpen(false)}
+      />
+
+      {/* FILE RECOVERY */}
+      <ItemListModal
+        c={c}
+        open={fileRecoveryOpen}
+        title="Recycle Bin - recoverable files"
+        emptyText={fileRecoveryBusy ? 'Reading $Recycle.Bin…' : 'Recycle Bin is empty.'}
+        items={fileRecoveryRows.map((r) => ({
+          id: r.path,
+          primary: r.path.split('\\').pop(),
+          secondary: `${(r.bytes / 1024).toFixed(1)} KB · ${new Date(r.deleted_at || 0).toLocaleString()} · ${r.path}`,
+          actionLabelOverride: 'Restore...',
+        }))}
+        actionLabel="Restore..."
+        onAction={(item) => {
+          setFileRecoveryOpen(false);
+          // open Reports tab for now (the renderer can wire a recovery
+          // destination dialog later if not already present)
+        }}
+        onClose={() => setFileRecoveryOpen(false)}
+      />
+
+      {/* FREE SPACE WIPER */}
+      <ItemListModal
+        c={c}
+        open={wiperOpen}
+        title="Free Space Wiper"
+        emptyText={wiperBusy ? 'Reading drives…' : 'No drives.'}
+        items={wiperDrives.map((d) => ({
+          id: d.letter,
+          primary: `${d.letter} · ${(d.free_gb || 0).toFixed(1)} GB free`,
+          secondary: `Total ${(d.size_gb || 0).toFixed(1)} GB · ${d.label || '(no label)'}`,
+          actionLabelOverride: 'Wipe',
+        }))}
+        actionLabel="Wipe"
+        onAction={(item) => { setWiperPasses(1); setWiperConfirm(item.id); }}
+        onClose={() => setWiperOpen(false)}
+      />
+      <ConfirmModal
+        c={c}
+        open={!!wiperConfirm}
+        busy={wiperBusy}
+        title={`Wipe drive ${wiperConfirm || ''}?`}
+        message={`Wipes the FREE SPACE on ${wiperConfirm} so previously-deleted files cannot be recovered. Wiping 200+ GB can take hours. Sleep / hibernate is preserved. NO files are touched.`}
+        details={`Drive: ${wiperConfirm} · Passes: 1 (single overwrite - NIST SP 800-88 Clear)`}
+        confirmLabel="Wipe drive"
+        onConfirm={handleConfirmWipe}
+        onCancel={() => setWiperConfirm(null)}
+      />
+      {wiperResult && (
+        <div style={{ position: 'fixed', bottom: 60, left: 620, zIndex: 30, fontSize: 11, color: c.textSecondary, background: c.bgSecondary, padding: '6px 10px', border: `1px solid ${c.border}`, borderRadius: 6, maxWidth: 400 }}>{wiperResult}</div>
+      )}
+
+      {/* WINDOWS SLIMMER */}
+      <ItemListModal
+        c={c}
+        open={slimmerOpen}
+        title="Windows Slimmer"
+        emptyText={slimmerBusy ? 'Reading system state…' : 'No operations.'}
+        items={slimmerOps.map((o) => ({
+          id: o.id,
+          primary: o.label,
+          secondary: o.description + (o.current_bytes ? ` (current: ${(o.current_bytes / 1024 / 1024 / 1024).toFixed(1)} GB)` : ''),
+          actionLabelOverride: 'Apply',
+        }))}
+        actionLabel="Apply"
+        onAction={(item) => setSlimmerConfirm({ id: item.id, label: item.primary })}
+        onClose={() => setSlimmerOpen(false)}
+      />
+      <ConfirmModal
+        c={c}
+        open={!!slimmerConfirm}
+        busy={slimmerBusy}
+        title="Apply this slimming op?"
+        message="This is a system-level change. Some require admin (compact OS, disable restore). It's reversible for most ops except 'Disable System Restore' (which deletes restore points). Exit before reverting."
+        details={slimmerConfirm ? slimmerConfirm.label : null}
+        confirmLabel="Apply"
+        onConfirm={handleConfirmSlimmer}
+        onCancel={() => setSlimmerConfirm(null)}
+      />
+
+      {/* MODE SWITCHER */}
+      <ItemListModal
+        c={c}
+        open={modesOpen}
+        title="Mode Switcher - Power Plan"
+        emptyText={modesBusy ? 'Loading…' : 'No schemes found.'}
+        items={modesList.map((s) => ({
+          id: s.id,
+          primary: `${s.label}${s.active ? ' (active)' : ''}`,
+          secondary: `GUID: ${s.guid}`,
+          actionLabelOverride: s.active ? '—' : 'Activate',
+        }))}
+        actionLabel="Activate"
+        onAction={(item) => { if (!modesList.find((x) => x.id === item.id && x.active)) handleSetMode(item.id); }}
+        onClose={() => setModesOpen(false)}
+      />
+
+      {/* CONTEXT MENU */}
+      <ItemListModal
+        c={c}
+        open={ctxOpen}
+        title="Context Menu Manager"
+        emptyText={ctxBusy ? 'Loading…' : 'No context menu handlers found (clean install).'}
+        items={ctxList.map((h) => ({
+          id: h.id,
+          primary: h.name,
+          secondary: `${h.location} · ${h.value ? h.value : '(empty)'}`,
+          actionLabelOverride: h.disabled ? 'Enable' : 'Disable',
+        }))}
+        actionLabel="Disable"
+        onAction={(item) => {
+          const h = ctxList.find((x) => x.id === item.id);
+          if (h) handleToggleContext(h, h.disabled ? 'enable' : 'disable');
+        }}
+        onClose={() => setCtxOpen(false)}
+      />
+
+      {/* INTEGRATOR */}
+      <ItemListModal
+        c={c}
+        open={integOpen}
+        title="Shell Integrator"
+        emptyText={integBusy ? 'Loading…' : 'No entries.'}
+        items={integList.map((e) => ({
+          id: e.id,
+          primary: e.label,
+          secondary: e.installed ? 'Already installed' : 'Not installed',
+          actionLabelOverride: e.installed ? 'Remove' : 'Add',
+        }))}
+        actionLabel="Add"
+        onAction={(item) => {
+          const e = integList.find((x) => x.id === item.id);
+          if (e) handleToggleIntegrator(e, e.installed ? 'remove' : 'add');
+        }}
+        onClose={() => setIntegOpen(false)}
+      />
+
+      {/* REGISTRY DEFRAG */}
+      <ItemListModal
+        c={c}
+        open={regDefragOpen}
+        title="Registry Hive Sizes"
+        emptyText={regDefragBusy ? 'Reading registry…' : 'No hives.'}
+        items={regDefragHives.map((h) => ({
+          id: 'hive:' + (h.name || '?'),
+          primary: (h.name || '?') + (h.unloadable ? ' (user hive)' : ' (system - read only)'),
+          secondary: `${(h.size_kb || 0).toFixed(1)} KB${h.file_path ? ' · ' + h.file_path : ''}` + (h.subkey_count ? ` · ${h.subkey_count} subkey(s)` : ''),
+        }))}
+        actionLabel="Defrag user hive"
+        onAction={(item) => {
+          if (regDefragBusy) return;
+          if (regDefragHives.find((h) => h.id === item.id) && !regDefragHives.find((h) => h.id === item.id).unloadable) {
+            setDebugResult('Only user (HKCU/HKU) hives can be safely compacted mid-session. Use the schedule-at-logout feature instead.');
+            return;
+          }
+          setActionCenterConfirm({ id: 'compact', label: 'Compact ' + item.id });
+        }}
+        onClose={() => setRegDefragOpen(false)}
+      />
+      <ConfirmModal
+        c={c}
+        open={!!actionCenterConfirm && actionCenterConfirm.id === 'compact'}
+        busy={regDefragBusy}
+        title="Compact user registry hive?"
+        message="Writes the loaded HKCU hive to a temporary file, then reloads it - effectively rebuilding the hive layout. May briefly affect apps with cached handles. The script reports savings at the end."
+        details={actionCenterConfirm?.id === 'compact' ? actionCenterConfirm.label : null}
+        confirmLabel="Compact"
+        onConfirm={handleRegDefragCompact}
+        onCancel={() => setActionCenterConfirm(null)}
+      />
+
+      {/* ACTION CENTER CLEANER */}
+      <ItemListModal
+        c={c}
+        open={actionCenterOpen}
+        title="Action Center Cleaner"
+        emptyText={actionCenterBusy ? 'Reading registry…' : 'No operations.'}
+        items={actionCenterOps.map((o) => ({
+          id: 'op:' + o.id,
+          primary: o.label,
+          secondary: o.description + (o.current_value !== '' && o.current_value !== '(not set)' ? ` (current: ${o.current_value})` : ''),
+          actionLabelOverride: 'Apply',
+        }))}
+        actionLabel="Apply"
+        onAction={(item) => {
+          const op = actionCenterOps.find((o) => ('op:' + o.id) === item.id);
+          if (op) setActionCenterConfirm({ id: op.id, label: op.label });
+        }}
+        onClose={() => setActionCenterOpen(false)}
+      />
+      <ConfirmModal
+        c={c}
+        open={!!actionCenterConfirm && actionCenterConfirm.id !== 'compact'}
+        busy={actionCenterBusy}
+        title="Apply this Action Center op?"
+        message={`This touches notification area, recent documents, and Tips registry values. It's reversible - just toggle the setting back to its previous value in the same way.`}
+        details={actionCenterConfirm?.label}
+        confirmLabel="Apply"
+        onConfirm={handleConfirmActionCenter}
+        onCancel={() => setActionCenterConfirm(null)}
+      />
+
+      {debugResult && (
+        <div style={{ position: 'fixed', bottom: 60, left: 920, zIndex: 30, fontSize: 11, color: c.textSecondary, background: c.bgSecondary, padding: '6px 10px', border: `1px solid ${c.border}`, borderRadius: 6, maxWidth: 380 }}>{debugResult}</div>
+      )}
+
+      {/* DISK PRIORITY */}
+      <ItemListModal
+        c={c}
+        open={diskPrioOpen}
+        title="Disk Priority Manager"
+        emptyText={diskPrioBusy ? 'Reading…' : 'No multimedia profile.'}
+        items={diskPrioProfiles.map((p) => ({
+          id: 'p:' + p.name,
+          primary: p.name + (p.priority !== '(not set)' ? ` (Priority ${p.priority})` : ''),
+          secondary: `GPU priority: ${p.gpu_priority} · SFIO priority: ${p.sfio_priority}`,
+        }))}
+        actionLabel="Apply"
+        onAction={handleDiskPriorityApply}
+        onClose={() => setDiskPrioOpen(false)}
+      />
+
+      {/* BACKUP CLEANER */}
+      <ItemListModal
+        c={c}
+        open={backupCleanerOpen}
+        title="Backup Cleaner"
+        emptyText={backupCleanerBusy ? 'Walking folders…' : 'No backup artifacts found.'}
+        items={backupCleanerTargets.map((t) => ({
+          id: 'bc:' + t.id,
+          primary: t.label + (t.absent ? ' (absent)' : ''),
+          secondary: t.description + (t.size_mb ? ` · ${t.size_mb} MB` : ''),
+          actionLabelOverride: t.absent ? '—' : 'Remove',
+        }))}
+        actionLabel="Clean all"
+        onAction={() => { handleBackupCleanerApply(); }}
+        onClose={() => setBackupCleanerOpen(false)}
+      />
+
+      {/* DEFRAG ON NEXT BOOT */}
+      {defragBootState && (
+        <ItemListModal
+          c={c}
+          open={defragBootOpen}
+          title="Defrag on Next Boot"
+          emptyText={defragBootBusy ? 'Reading state…' : 'No state.'}
+          items={[
+            { id: 'auto', primary: 'Auto defrag scheduled (system-wide)', secondary: defragBootState.auto_defrag_enabled ? 'Enabled' : 'Disabled' },
+            { id: 'ro', primary: 'RunOnce value', secondary: defragBootState.runonce_value },
+            { id: 'task', primary: 'Scheduled task', secondary: defragBootState.task_present ? `${defragBootState.task_state}` : 'Not registered' },
+            { id: 'apply', primary: 'Schedule defrag for next logon', secondary: 'Adds a RunOnce + AtLogOn scheduled task. Reversible.' },
+          ]}
+          actionLabel="Schedule"
+          onAction={(item) => {
+            if (item.id === 'apply') handleDefragBootApply();
+            else setDebugResult('Use "Schedule defrag for next logon" to set this up.');
+          }}
+          onClose={() => setDefragBootOpen(false)}
+        />
+      )}
+
+      {/* BHO */}
+      <ItemListModal
+        c={c}
+        open={bhoOpen}
+        title="Browser Helper Objects"
+        emptyText={bhoBusy ? 'Scanning…' : 'No BHO found.'}
+        items={bhoList.map((b) => ({
+          id: 'b:' + b.id,
+          primary: `${b.status === 'orphan' ? '⚠ ORPHAN' : (b.status === 'found' ? '✓ OK' : '?')} ${b.clsid}`,
+          secondary: `${b.hive} · ${b.file_path}`,
+          actionLabelOverride: b.status === 'orphan' ? 'Remove' : '—',
+        }))}
+        actionLabel="Clean orphans"
+        onAction={() => { handleBhoApply(); }}
+        onClose={() => setBhoOpen(false)}
+      />
 
       {/* "Add tool" chooser - lists every other tab and switches to it */}
       <ItemListModal
