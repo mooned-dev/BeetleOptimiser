@@ -1,0 +1,81 @@
+/* Beetle Optimiser - Global styles + theme variables. */
+
+:root {
+  /* Dark theme defaults (overridden when isLight) */
+  --bg-primary:    #1A0F26;
+  --bg-secondary:  #261A40;
+  --bg-tertiary:   #0F0821;
+  --border:        #2E1F4A;
+  --border-light:  #352858;
+  --text-primary:  #F0EAF5;
+  --text-secondary:#BFAED1;
+  --text-muted:    #7C6F95;
+  --accent:        #A678E0;
+  --accent-light:  #C09FE0;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body, #root {
+  height: 100vh;
+  overflow: hidden;
+  font-family: "Segoe UI", -apple-system, BlinkMacSystemFont, sans-serif;
+  font-size: 13px;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  /* Prevent text selection across the whole app */
+  user-select: none;
+  -webkit-user-select: none;
+  cursor: default;
+}
+
+/* Allow text selection inside inputs/textareas/contenteditable only */
+input, textarea, [contenteditable] {
+  user-select: text;
+  -webkit-user-select: text;
+  cursor: text;
+}
+
+button {
+  font-family: inherit;
+  font-size: inherit;
+  cursor: pointer;
+  background: transparent;
+  border: 1px solid transparent;
+  color: inherit;
+}
+
+/* Component classes (animations are in animations.css) */
+.titlebar-anim { animation: title-fade 0.4s ease-out; }
+.theme-pill-btn { transition: background 0.15s ease, border-color 0.15s ease; }
+.theme-pill-btn:hover { border-color: var(--accent) !important; }
+.tab-btn { transition: color 0.15s ease, border-bottom-color 0.18s ease; }
+.tab-btn:hover { color: var(--text-primary); }
+.nav-item-btn { transition: background 0.15s ease, border-left-color 0.15s ease; }
+.nav-item-btn:hover { background: rgba(166,120,224,0.08); }
+.sidebar-fold-btn { transition: background 0.15s ease, border-color 0.15s ease; }
+.sidebar-fold-btn:hover { border-color: var(--accent) !important; }
+.bottom-tile-btn { transition: background 0.15s ease, transform 0.12s ease; }
+.bottom-tile-btn:hover { background: rgba(166,120,224,0.10); transform: translateY(-2px); }
+.scanner-cat-btn { transition: background 0.15s ease; }
+.scanner-cat-btn:hover { background: rgba(166,120,224,0.08); }
+
+
+
+
+.scan-circle-inner { transition: background 0.2s ease, transform 0.12s ease; }
+.scan-circle-inner:hover { transform: scale(1.04); }
+.scan-circle-inner:active { transform: scale(0.98); }
+.customize-link-btn { transition: color 0.15s ease, transform 0.12s ease; }
+.customize-link-btn:hover { transform: scale(1.05); }
+
+/* Title bar window-control buttons */
+.title-btn { transition: background 0.12s ease, color 0.12s ease; }
+.title-btn-min:hover, .title-btn-max:hover {
+  background: rgba(255, 255, 255, 0.08) !important;
+  color: var(--text-primary) !important;
+}
+.title-btn-close:hover {
+  background: #E81123 !important;
+  color: white !important;
+}

@@ -1,0 +1,8 @@
+/* Beetle Optimiser - Keyframe animations. */
+
+@keyframes title-fade {
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.titlebar-anim { animation: title-fade 0.4s ease-out; }

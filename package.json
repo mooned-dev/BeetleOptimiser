@@ -1,0 +1,55 @@
+{
+  "name": "beetleoptimiser-electron",
+  "version": "0.2.0",
+  "description": "Beetle Optimiser - Windows system optimizer",
+  "main": "main.js",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "start": "npm run build && electron .",
+    "package": "npm run build && electron-builder --win portable"
+  },
+  "keywords": [],
+  "author": "MOONED DEV STUDIO",
+  "license": "Proprietary",
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.0.0",
+    "electron": "30.5.1",
+    "electron-builder": "^24.0.0",
+    "vite": "^5.0.0"
+  },
+  "dependencies": {
+    "@phosphor-icons/react": "^2.1.10",
+    "firebase": "^12.15.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "build": {
+    "appId": "dev.mooned.beetleoptimiser",
+    "productName": "BeetleOptimiser",
+    "win": {
+      "icon": "build/icon.ico",
+      "target": [
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "files": [
+      "main.js",
+      "src/preload.js",
+      "scripts/**/*",
+      "dist/index.html",
+      "dist/assets/**/*",
+      "build/icon.ico",
+      "package.json",
+      "!dist/win-unpacked/**"
+    ],
+    "asarUnpack": [
+      "scripts/**/*"
+    ]
+  }
+}
