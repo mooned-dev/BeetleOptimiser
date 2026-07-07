@@ -129,6 +129,7 @@ if ($mode -eq 'optimize') {
   } catch { Emit-Line @{ event = 'warning'; step = 'dns_ttl'; reason = $_.Exception.Message } }
 
   Emit-Line @{ event = 'applied'; steps = $applied }
+  & "$PSScriptRoot\optimize-report.ps1" --tool 'Internet' --action 'optimize'
   Emit-Line @{ event = 'finished'; mode = $mode }
   return
 }
@@ -144,8 +145,11 @@ if ($mode -eq 'reset') {
     netsh int tcp set global autotuninglevel=normal 2>&1 | Out-Null
     Emit-Line @{ event = 'reset' }
   } catch { Emit-Line @{ event = 'error'; reason = $_.Exception.Message } }
+  # This used to be logged as --action 'optimize' (copy-paste from the
+  # block above) and ran AFTER the 'finished' event - both fixed: it's
+  # correctly labeled 'reset' now, and runs before 'finished' like every
+  # other script's report call.
+  & "$PSScriptRoot\optimize-report.ps1" --tool 'Internet' --action 'reset'
   Emit-Line @{ event = 'finished'; mode = $mode }
-
-& "$PSScriptRoot\optimize-report.ps1" --tool 'Internet' --action 'optimize'
   return
 }

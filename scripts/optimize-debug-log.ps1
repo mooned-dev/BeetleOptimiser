@@ -88,7 +88,9 @@ $tweakKeys = @(
 foreach ($k in $tweakKeys) {
   $val = $null
   try {
-    $val = (Get-ItemProperty -LiteralPath $k.path -Name $k.name -ErrorAction Stop).$k.name
+    # .($k.name), not .$k.name - the latter parses as (.$k).name and always
+    # returns $null (see the identical bug fixed in optimize-win10.ps1).
+    $val = (Get-ItemProperty -LiteralPath $k.path -Name $k.name -ErrorAction Stop).($k.name)
   } catch {}
   $display = if ($null -ne $val) { $val } else { '(not set)' }
   $line = '{0} :: {1} :: {2}' -f $k.id, $k.path, $display

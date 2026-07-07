@@ -101,11 +101,18 @@ $TWEAKS = @(
     description='Skip the elevation prompt for both binaries AND non-Windows apps';
     regPath='HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System'; valueName='ConsentPromptBehaviorAdmin'; type='DWord'; applyValue=0; revertValue=2 }
 
-  # ---- Ad Remover / Backup Cleaner ----
-  @{ id='backup_cleaner'; category='Cleanup'; label='Disable Windows.old + upgrade backups';
-    description='Removes WIM files left over from major feature updates';
-    regPath='HKLM:\SYSTEM\CurrentControlSet\Services\dosvc'; valueName='Start'; type='DWord'; applyValue=4; revertValue=2 }
 )
+# NOTE: a 'backup_cleaner' entry used to live here, labeled "Disable
+# Windows.old + upgrade backups / Removes WIM files left over from major
+# feature updates" - but its actual regPath/valueName just disabled the
+# Delivery Optimization service (dosvc), touching zero Windows.old/WIM
+# data. That's a real, separate feature already correctly named and
+# implemented as the 'delivery_optimization' op in
+# optimize-windows-slimmer.ps1; the real Windows.old/upgrade-backup
+# cleanup this label promised lives in optimize-backup-cleaner.ps1's
+# 'windows_old' target. Removed rather than fixed in place, since fixing
+# it in place would just be a second, mislabeled path to an already-
+# correctly-named feature.
 
 # Parse mode + tweak id from args
 $mode = 'list-all'
@@ -130,7 +137,12 @@ function Emit-Tweak-State($t) {
   $keyExists = Test-Path -LiteralPath $t.regPath
   $cur = $null
   if ($keyExists) {
-    try { $cur = (Get-ItemProperty -LiteralPath $t.regPath -Name $t.valueName -ErrorAction Stop).$t.valueName } catch {}
+    # NOTE: must be .($t.valueName) - ".$t.valueName" parses as (.$t).valueName,
+    # which tries to access a property literally named after $t's stringified
+    # hashtable, not the value named by $t.valueName. That silently always
+    # returned $null, which broke both the "current value" display AND the
+    # pre-apply backup used by revert (see the 'apply' branch below).
+    try { $cur = (Get-ItemProperty -LiteralPath $t.regPath -Name $t.valueName -ErrorAction Stop).($t.valueName) } catch {}
   }
   Emit-Line @{
     event = 'tweak'
@@ -170,10 +182,10 @@ switch ($mode) {
     # Backup the current value first (Rescue Center-friendly)
     $cur = $null
     if (Test-Path -LiteralPath $t.regPath) {
-      try { $cur = (Get-ItemProperty -LiteralPath $t.regPath -Name $t.valueName -ErrorAction Stop).$t.valueName } catch {}
+      try { $cur = (Get-ItemProperty -LiteralPath $t.regPath -Name $t.valueName -ErrorAction Stop).($t.valueName) } catch {}
     }
     $backupFile = Join-Path $backupDir ($t.id + '.json')
-    @{ id = $t.id; ts = (Get-Date).ToString('o'); current_value = if ($cur -ne $null) { "$cur" } else { $null }; type = $t.type; path = $t.regPath; value = $t.valueName } | ConvertTo-Json | Out-File -LiteralPath $backupFile -Encoding UTF8 -Force
+    @{ tool = 'Win10 Protector'; id = $t.id; ts = (Get-Date).ToString('o'); current_value = if ($cur -ne $null) { "$cur" } else { $null }; type = $t.type; path = $t.regPath; value = $t.valueName } | ConvertTo-Json | Out-File -LiteralPath $backupFile -Encoding UTF8 -Force
 
     # Apply
     try {

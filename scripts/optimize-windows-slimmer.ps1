@@ -118,24 +118,44 @@ if ($mode -eq 'apply') {
     'hibernate_file' {
       # powercfg /h off - clears the hibernation file
       $out = & 'powercfg' '/h' 'off' 2>&1 | Out-String
-      Emit-Line @{ event = 'applied'; op = $op; output = $out }
+      if ($LASTEXITCODE -eq 0) {
+        Emit-Line @{ event = 'applied'; op = $op; output = $out }
+      } else {
+        Emit-Line @{ event = 'error'; op = $op; reason = $out.Trim() }
+      }
     }
     'system_restore' {
-      # Disable System Restore via the registry (HKLM\Software\Microsoft\Windows NT\CurrentVersion\SystemRestore + DisableSR)
+      # Disable System Restore via the registry (HKLM\Software\Microsoft\Windows NT\CurrentVersion\SystemRestore + DisableSR).
+      # Both writes require admin; previously this swallowed every failure
+      # silently and still emitted 'applied' unconditionally, so an
+      # unelevated run claimed success while writing nothing at all.
+      $anyWriteSucceeded = $false
+      $errors = @()
       try {
         Set-ItemProperty -LiteralPath 'HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\SystemRestore' -Name 'DisableSR' -Value 1 -Type DWord -Force -ErrorAction Stop
-      } catch {}
+        $anyWriteSucceeded = $true
+      } catch { $errors += $_.Exception.Message }
       try {
         Set-ItemProperty -LiteralPath 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\SystemRestore' -Name 'DisableSR' -Value 1 -Type DWord -Force -ErrorAction Stop
-        # Best-effort: try to clean up existing restore points
-        vssadmin delete shadows /for=c: /quiet 2>&1 | Out-Null
-      } catch {}
-      Emit-Line @{ event = 'applied'; op = $op }
+        $anyWriteSucceeded = $true
+      } catch { $errors += $_.Exception.Message }
+      # Best-effort: try to clean up existing restore points. This can
+      # legitimately no-op (no shadows exist yet) so it doesn't gate success.
+      try { vssadmin delete shadows /for=c: /quiet 2>&1 | Out-Null } catch {}
+      if ($anyWriteSucceeded) {
+        Emit-Line @{ event = 'applied'; op = $op; warnings = $errors }
+      } else {
+        Emit-Line @{ event = 'error'; op = $op; reason = ($errors -join '; ') }
+      }
     }
     'compact_os' {
       # compact /CompactOS:always - this is the documented binary path
       $out = & 'compact' '/CompactOS:always' 2>&1 | Out-String
-      Emit-Line @{ event = 'applied'; op = $op; output = $out }
+      if ($LASTEXITCODE -eq 0) {
+        Emit-Line @{ event = 'applied'; op = $op; output = $out }
+      } else {
+        Emit-Line @{ event = 'error'; op = $op; reason = $out.Trim() }
+      }
     }
     'delivery_optimization' {
       # Stop + disable DoSvc (Delivery Optimization). Needs admin.

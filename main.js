@@ -955,10 +955,14 @@ ipcMain.handle('optimizer:context-menu-enable', (_, id, token) => {
   consumeConfirmation(token, 'context-menu-enable');
   return spawnOptimizer('scripts/optimize-context-menu.ps1', ['enable', '--id', id, '--yes']);
 });
-ipcMain.handle('optimizer:integrator-list', () => spawnOptimizer('scripts/optimize-integrator.ps1', ['list']));
+// The portable exe has no fixed install path, so the script can't guess it -
+// process.execPath is the actual running exe in a packaged build (in dev it
+// points at the electron.exe helper instead, which isn't a real launch
+// target; the Integrator naturally reports itself as unavailable in that case).
+ipcMain.handle('optimizer:integrator-list', () => spawnOptimizer('scripts/optimize-integrator.ps1', ['list', '--exe', process.execPath]));
 ipcMain.handle('optimizer:integrator-add', (_, id, token) => {
   consumeConfirmation(token, 'integrator-add');
-  return spawnOptimizer('scripts/optimize-integrator.ps1', ['add', '--entry', id, '--yes']);
+  return spawnOptimizer('scripts/optimize-integrator.ps1', ['add', '--entry', id, '--exe', process.execPath, '--yes']);
 });
 ipcMain.handle('optimizer:rescue-list', () => spawnOptimizer('scripts/optimize-rescue.ps1', ['list']));
 ipcMain.handle('optimizer:registry-defrag', () => spawnOptimizer('scripts/optimize-registry-defrag.ps1', ['list']));

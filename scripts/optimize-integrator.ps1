@@ -21,9 +21,24 @@ function Emit-Line($obj) {
   [Console]::Out.Flush()
 }
 
-# Locate the running install
-$executable = Join-Path $env:USERPROFILE 'AppData\Local\BeetleOptimiser\BeetleOptimiser.exe'
-$isInstalled = Test-Path -LiteralPath $executable
+# HKCR: is NOT one of PowerShell's default PSDrives (only HKLM:/HKCU: are
+# created automatically) - confirmed via Get-PSDrive. Every path below is
+# under HKEY_CLASSES_ROOT, so without this, every Test-Path/New-Item
+# against "HKCR:..." silently fails and the whole script is a no-op.
+if (-not (Get-PSDrive -Name HKCR -ErrorAction SilentlyContinue)) {
+  New-PSDrive -Name HKCR -PSProvider Registry -Root HKEY_CLASSES_ROOT -Scope Script -ErrorAction SilentlyContinue | Out-Null
+}
+
+# The real running executable's path, passed in by main.js (--exe <path>)
+# rather than guessed here. This app packages as a portable exe (see
+# package.json's "target": "portable"), which has no fixed install
+# location - a hardcoded %LOCALAPPDATA%\BeetleOptimiser\... guess would
+# almost never match where the user actually placed the exe.
+$executable = $null
+for ($j = 0; $j -lt $args.Count; $j++) {
+  if ($args[$j] -eq '--exe') { $executable = $args[$j + 1] }
+}
+$isInstalled = ($executable -and (Test-Path -LiteralPath $executable))
 
 $ENTRIES = @(
   @{ id = 'defrag_drive';     target = 'HKCR:Drive\shell';                          verb = 'beetleDefrag';        label = 'Defragment this drive';     icon = 'imageres.dll,-1018' },
@@ -91,6 +106,11 @@ if ($mode -in @('add', 'remove')) {
   }
 
   # ADD
+  if (-not $e.isCom -and -not $isInstalled) {
+    Emit-Line @{ event = 'error'; reason = 'no valid --exe path given; refusing to register a context-menu entry pointing at a missing executable' }
+    Emit-Line @{ event = 'finished'; mode = $mode }
+    return
+  }
   try {
     if ($e.isCom) {
       # Com-based extension handler: just write the CLSID string at the

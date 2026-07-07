@@ -38,15 +38,15 @@ Emit-Line @{ event = 'started'; mode = $mode }
 
 # --- LIST ---
 if ($mode -eq 'list') {
-  $bins = Get-ChildItem -Path $env:SystemDrive -Force -Filter '$Recycle.Bin' -ErrorAction SilentlyContinue
-  if ($bins) {
-    $bins += # enumerate each drive's bin
-      Get-PSDrive -PSProvider FileSystem -ErrorAction SilentlyContinue |
-        ForEach-Object {
-          $root = $_.Root
-          if ($root) { Get-ChildItem -LiteralPath $root -Force -Filter '$Recycle.Bin' -ErrorAction SilentlyContinue }
-        }
-  }
+  # Enumerate every fixed drive's own $Recycle.Bin (not just the system
+  # drive) - this used to be gated behind "if the system drive's bin was
+  # already found", which meant other drives were skipped entirely
+  # whenever that first lookup came back empty. Unconditional now.
+  $bins = Get-PSDrive -PSProvider FileSystem -ErrorAction SilentlyContinue |
+    ForEach-Object {
+      $root = $_.Root
+      if ($root) { Get-ChildItem -LiteralPath $root -Force -Filter '$Recycle.Bin' -ErrorAction SilentlyContinue }
+    }
   $bins = $bins | Select-Object -Unique | Where-Object { $_ -and (Test-Path -LiteralPath $_.FullName) }
   $count = 0
   foreach ($bin in $bins) {
@@ -102,10 +102,17 @@ if ($mode -eq 'restore') {
       $name = Split-Path -Leaf $src
       # Strip leading $Rxxxxxxxx... to a friendlier name
       if ($name -match '^\$R[A-Za-z0-9_-]+') {
-        # Empty bin files have no original name available without a metadata
-        # parse; use the file hash as a short tag instead.
+        # Real recycle-bin filenames are short ($R + 6 chars + extension,
+        # e.g. "$R8NITB6.ico" - 12 characters, verified on a live system) -
+        # a hardcoded Substring(19) assumed a fixed length nothing like
+        # that and threw ArgumentOutOfRangeException on every real file,
+        # aborting the restore before Copy-Item ever ran. There's no
+        # original filename available without parsing the bin's metadata
+        # index, so we keep the file's own (Windows-preserved) extension
+        # and tag it with a short hash instead of guessing a length.
         $tag = (Get-FileHash -LiteralPath $src -Algorithm SHA1).Hash.Substring(0, 8)
-        $name = "recovered_${tag}_$((Split-Path -Leaf $src).Substring(19))"
+        $ext = [System.IO.Path]::GetExtension($name)
+        $name = "recovered_${tag}${ext}"
       }
       $destPath = Join-Path $restoreDest $name
       if (Test-Path -LiteralPath $destPath) {

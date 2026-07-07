@@ -61,7 +61,14 @@ if ($mode -eq 'list') {
   # Recent Docs usage
   $recentDocs = 0
   try {
-    Get-ChildItem -LiteralPath "Registry::HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Explorer\RecentDocs" -ErrorAction SilentlyContinue | ForEach-Object { $recentDocs += (Get-ItemProperty -LiteralPath "Registry::$($_.Name)" -ErrorAction SilentlyContinue | Get-Member -Name '*' | Measure-Object).Count }
+    Get-ChildItem -LiteralPath "Registry::HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Explorer\RecentDocs" -ErrorAction SilentlyContinue | ForEach-Object {
+      # -Name '*' with no -MemberType matches EVERY member (methods, .NET
+      # properties, the 5 PS-internal PSPath/PSParentPath/PSChildName/
+      # PSDrive/PSProvider properties Get-ItemProperty always adds) - not
+      # just real registry values, which inflated the displayed count.
+      $recentDocs += (Get-ItemProperty -LiteralPath "Registry::$($_.Name)" -ErrorAction SilentlyContinue |
+        Get-Member -MemberType NoteProperty | Where-Object { $_.Name -notlike 'PS*' } | Measure-Object).Count
+    }
   } catch {}
   # Aero Peek size (per registry)
   $peekIdx = (Get-ItemProperty -LiteralPath 'HKCU:\Software\Microsoft\Windows\DWM' -ErrorAction SilentlyContinue).CompositorFrameDelay
@@ -130,9 +137,14 @@ if ($mode -eq 'apply') {
       # this on the fly when missing; we set NotifyIconSchemes to a clean empty value.
       $p = 'HKCU:\Control Panel\NotifyIconSchemes'
       if (Test-Path -LiteralPath $p) {
-        # Don't delete the key (Windows needs the schemas), just clear values
-        Get-Item -LiteralPath $p | Get-Member -Type NoteProperty | ForEach-Object {
-          Remove-ItemProperty -LiteralPath $p -Name $_.Name -Force -ErrorAction SilentlyContinue
+        # Don't delete the key (Windows needs the schemas), just clear values.
+        # NOTE: Get-Item's own object never exposes registry VALUES as
+        # NoteProperties (verified: Get-Member -Type NoteProperty on it
+        # returns nothing) - .Property is the actual accessor for the list
+        # of value names. The old code silently cleared nothing at all.
+        $valueNames = (Get-Item -LiteralPath $p -ErrorAction SilentlyContinue).Property
+        foreach ($name in $valueNames) {
+          Remove-ItemProperty -LiteralPath $p -Name $name -Force -ErrorAction SilentlyContinue
         }
       }
       Emit-Line @{ event = 'applied'; op = $op; note = 'Windows will rebuild on next sign-in' }

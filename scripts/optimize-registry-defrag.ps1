@@ -35,59 +35,78 @@ Emit-Line @{ event = 'started'; mode = $mode; computer = $env:COMPUTERNAME }
 
 # Helper - read the per-hive size from the registry process address space.
 # RegQueryInfoKey reports the subkey count but not the hive size; we use
-# the .regfile size on disk (which IS the file backing the hive if
-# the hive is file-backed like HKU or SYSTEM\Configuration) or report
-# "live" if it isn't.
+# the on-disk file size of whatever actually backs each hive.
 function Get-HiveInfo {
-  param($name, $path, $regPath)
+  param($name, $regPath)
   $item = @{ name = $name; path = $regPath; unloadable = $false; size_bytes = 0; size_kb = 0; subkey_count = 0 }
 
-  # Determine hive type: live (HKLM/HKCR) vs file-backed (HKU\<sid>, BCD, etc.)
+  # Per Microsoft Learn, the on-disk hive files live under
+  # %SystemRoot%\System32\config. HKLM is actually several separate files
+  # (SOFTWARE/SYSTEM/SAM/SECURITY/DEFAULT), so we sum them for a real
+  # total rather than reporting one arbitrary file's size. HKCR is a
+  # merged view whose registrations mostly live inside the SOFTWARE hive
+  # (the Classes subtree); HKCC is a hardware-profile subtree of SYSTEM -
+  # for both we report the whole backing file's size with a note, since
+  # there's no way to isolate just that subtree's size from the file alone.
+  # These hive files deny even Test-Path/Get-Item to a non-elevated
+  # process (verified: Test-Path itself throws "Access is denied" without
+  # elevation) - so an unelevated run can't report a real size for
+  # HKLM/HKCR/HKCC at all. Rather than silently showing "0 bytes" (which
+  # reads as "this hive is empty" instead of "we can't see it"), we say so.
+  $configDir = Join-Path $env:SystemRoot 'System32\config'
+  $accessDeniedNote = 'Size unavailable without running elevated (Administrator) - Windows denies read access to these hive files otherwise.'
   switch ($name) {
-    'HKLM' { $item.unloadable = $false }
-    'HKCR' {
-      # HKCR is a merged view of HKLM\SOFTWARE\Classes + HKCU\Software\Classes;
-      # its file backing is HKLM\SOFTWARE\Classes which lives in C:\Windows\System32\config\SOFTWARE
-      $item.unloadable = $false
+    'HKLM' {
+      $paths = @('SOFTWARE', 'SYSTEM', 'SAM', 'SECURITY', 'DEFAULT') | ForEach-Object { Join-Path $configDir $_ }
+      $readable = $paths | Where-Object { Test-Path -LiteralPath $_ -ErrorAction SilentlyContinue }
+      $item.size_bytes = ($readable | ForEach-Object { (Get-Item -LiteralPath $_ -Force -ErrorAction SilentlyContinue).Length } | Measure-Object -Sum).Sum
+      $item.file_path = $configDir
+      if (@($readable).Count -lt $paths.Count) { $item.note = $accessDeniedNote }
     }
-    default { $item.unloadable = $true }
-  }
-
-  # Try to get on-disk size if it's a known hive file
-  $fileMap = @{
-    'Software'      = "$env:SystemRoot\System32\config\SOFTWARE"
-    'System'        = "$env:SystemRoot\System32\config\SYSTEM"
-    'Security'      = "$env:SystemRoot\System32\config\SECURITY"
-    'Sam'           = "$env:SystemRoot\System32\config\SAM"
-    'Default'       = "$env:SystemRoot\System32\config\DEFAULT"
-    'Bcd'           = "$env:ProgramFiles\Microsoft Visual Studio\???\Bcd-template"
-    'UserDefault'   = "$env:SystemRoot\System32\config\DEFAULT"  # alias
-  }
-  foreach ($k in $fileMap.Keys) {
-    if ($regPath -like "*$k") {
-      $fp = $fileMap[$k]
-      if (Test-Path -LiteralPath $fp) {
+    'HKCR' {
+      $fp = Join-Path $configDir 'SOFTWARE'
+      if (Test-Path -LiteralPath $fp -ErrorAction SilentlyContinue) {
         $item.size_bytes = (Get-Item -LiteralPath $fp -Force).Length
-        $item.size_kb = [math]::Round($item.size_bytes / 1024, 1)
         $item.file_path = $fp
+        $item.note = 'HKCR is a merged view backed by the SOFTWARE hive (Classes subtree) - size shown is the whole SOFTWARE file'
+      } else {
+        $item.note = $accessDeniedNote
       }
     }
+    'HKCC' {
+      $fp = Join-Path $configDir 'SYSTEM'
+      if (Test-Path -LiteralPath $fp -ErrorAction SilentlyContinue) {
+        $item.size_bytes = (Get-Item -LiteralPath $fp -Force).Length
+        $item.file_path = $fp
+        $item.note = 'HKCC is a hardware-profile subtree of the SYSTEM hive - size shown is the whole SYSTEM file'
+      } else {
+        $item.note = $accessDeniedNote
+      }
+    }
+    'HKCU' {
+      $ntuser = Join-Path ([Environment]::GetFolderPath('UserProfile')) 'NTUSER.DAT'
+      if (Test-Path -LiteralPath $ntuser) { $item.size_bytes = (Get-Item -LiteralPath $ntuser -Force).Length; $item.file_path = $ntuser }
+      $item.unloadable = $true
+    }
+    'HKU' { $item.unloadable = $true }  # filled in by the caller (sums every profile's NTUSER.DAT)
   }
+  $item.size_kb = [math]::Round($item.size_bytes / 1024, 1)
 
-  # Subkey count from RegQueryInfoKey
-  try {
-    $info = & reg.exe query "$regPath" /v /reg:32 2>$null  # not used; we just count via .NET
-    # Simpler: read the number of immediate subkeys via ItemProperty
-    $sub = Get-ChildItem -LiteralPath "Registry::$regPath" -ErrorAction SilentlyContinue
-    if ($sub) { $item.subkey_count = $sub.Count }
-  } catch {}
+  # Subkey count. $regPath here is ALREADY a valid, directly-usable path -
+  # either a PSDrive alias ('HKLM:') or a fully Registry::-qualified path
+  # ('Registry::HKEY_CLASSES_ROOT'). Verified empirically: wrapping it in
+  # another "Registry::" prefix (the old code's "Registry::$regPath")
+  # produces an invalid path in both cases and silently resolves to 0
+  # results every time - subkey_count was always 0 for every hive.
+  $sub = Get-ChildItem -LiteralPath $regPath -ErrorAction SilentlyContinue
+  if ($sub) { $item.subkey_count = @($sub).Count }
 
   return $item
 }
 
 # --- LIST ---
 if ($mode -eq 'list') {
-  # We enumerate the 7 top-level hives. Each is at HKLM: or HKU:.
+  # We enumerate the 5 top-level hives. Each is at HKLM: or HKU:.
   $hives = @(
     @{ name = 'HKLM'; path = 'HKLM:' }
     @{ name = 'HKCU'; path = 'HKCU:' }
@@ -96,22 +115,22 @@ if ($mode -eq 'list') {
     @{ name = 'HKCC'; path = 'Registry::HKEY_CURRENT_CONFIG' }
   )
   foreach ($h in $hives) {
-    $info = Get-HiveInfo -name $h.name -path $h.path -regPath $h.path
-    # For HKU we can sum each SID hive size from disk
+    $info = Get-HiveInfo -name $h.name -regPath $h.path
+    # For HKU, sum every profile's NTUSER.DAT (each is a separate
+    # loadable hive under its own SID) rather than one hive file.
     if ($h.name -eq 'HKU') {
       $profilesDir = Join-Path $env:SystemDrive 'Users'
+      $ntuserFiles = @()
       if (Test-Path -LiteralPath $profilesDir) {
-        Get-ChildItem -LiteralPath $profilesDir -Directory -ErrorAction SilentlyContinue | ForEach-Object {
+        $ntuserFiles = Get-ChildItem -LiteralPath $profilesDir -Directory -ErrorAction SilentlyContinue | ForEach-Object {
           $ntuser = Join-Path $_.FullName 'NTUSER.DAT'
-          if (Test-Path -LiteralPath $ntuser) {
-            $info.size_bytes = (Get-Item -LiteralPath $ntuser -Force).Length
-            $info.size_kb = [math]::Round($info.size_bytes / 1024, 1)
-            $info.file_path = $ntuser
-          }
+          if (Test-Path -LiteralPath $ntuser) { Get-Item -LiteralPath $ntuser -Force }
         }
       }
-      $info.unloadable = $true
-      $info.subkey_count = 1  # at least one SID
+      $info.size_bytes = ($ntuserFiles | Measure-Object -Property Length -Sum).Sum
+      if (-not $info.size_bytes) { $info.size_bytes = 0 }
+      $info.size_kb = [math]::Round($info.size_bytes / 1024, 1)
+      $info.subkey_count = @($ntuserFiles).Count
     }
     Emit-Line @{ event = 'hive'; item = $info }
   }

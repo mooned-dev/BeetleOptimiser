@@ -3,8 +3,12 @@
 # pull their current + backup values, plus restore the registry value.
 #
 # Each backup file is a small JSON written by:
-#   optimize-win10.ps1   - per-tweak pre-apply snapshot
-#   optimize-registry.ps1 - per-key pre-repair snapshot (call writer if needed)
+#   optimize-win10.ps1 - per-tweak pre-apply snapshot ({tool,id,ts,
+#   current_value,type,path,value})
+#
+# optimize-registry.ps1's repairs do NOT write a backup here yet - if you're
+# adding that, give it the same JSON shape above (with tool = 'Registry
+# Cleaner' or similar) so this reader needs no changes.
 #
 # Output protocol: NDJSON. {event:'backup', file, tool, id, current_value,
 # backup_value, ts, type} for each backup file found.

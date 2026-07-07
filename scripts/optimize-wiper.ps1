@@ -30,11 +30,17 @@
 # {event:'done', bytes_wiped, total_passes}, {event:'finished'}.
 #
 # This script does NOT use cipher.exe by name (which is a '3rd-party
-# program' we said we wouldn't shell to); instead it walks the volume
-# directly - reading free-space regions from the volume's bitmap, then
-# writing zero-fill, then a fixed-pattern, until the bitmap reports no
-# more free clusters. This is the Auslogics BoostSpeed default approach
-# for Free Space Wiper (custom wipe, not cipher.exe).
+# program' we said we wouldn't shell to); instead it fills the volume's
+# free space with a cryptographically random-content temp file (sized to
+# nearly all remaining free space, per pass) and deletes it, relying on
+# the file system to reuse the freed clusters on the next pass. This is
+# simpler than reading the volume's free-space bitmap directly and is
+# good enough for the common case, but - like any single-large-file
+# approach - isn't guaranteed to touch every previously-freed cluster in
+# one pass on a fragmented HDD (a small free region the allocator skips
+# over won't get overwritten). Multiple passes reduce that risk but don't
+# eliminate it; a bitmap-driven wipe would be exhaustive but isn't
+# implemented here.
 
 $ErrorActionPreference = 'SilentlyContinue'
 

@@ -59,7 +59,7 @@ $TARGETS = @(
   @{ id = 'win_ws';              path = 'C:\$Windows.~WS';                                 label = '$Windows.~WS';         desc = 'Upgrade temp / WinSxS staging' }
   @{ id = 'winre_agent';         path = 'C:\$WinREAgent';                                  label = '$WinREAgent';          desc = 'Windows RE staging folder' }
   @{ id = 'crashdumps_user';     path = (Join-Path $env:LOCALAPPDATA 'CrashDumps');        label = 'Crash dumps';          desc = 'Old app crash dumps (only if your account)' }
-  @{ id = 'temp_java';           path = 'C:\Users\' + $env:USERNAME + '\AppData\LocalLow\Sun\Java\Deployment\cache'; label = 'Java cache'; desc = 'Old Java browser cache (empty on most systems)' }
+  @{ id = 'temp_java';           path = Join-Path $env:USERPROFILE 'AppData\LocalLow\Sun\Java\Deployment\cache'; label = 'Java cache'; desc = 'Old Java browser cache (empty on most systems)' }
 )
 
 # --- LIST ---

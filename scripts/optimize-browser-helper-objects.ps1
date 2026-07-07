@@ -55,10 +55,6 @@ if ($mode -eq 'list') {
       try {
         $filePath = (Get-ItemProperty -LiteralPath $comPath -ErrorAction Stop).'(default)'
       } catch {}
-      $displayName = $null
-      try {
-        $displayName = (Get-ItemProperty -LiteralPath "Registry::HKEY_CLASSES_ROOT\CLSID\$clsid\InprocServer32" -ErrorAction SilentlyContinue).'(default)'
-      } catch {}
       $status = 'unknown'
       if ($filePath) {
         if (Test-Path -LiteralPath $filePath -PathType Leaf) { $status = 'found' }

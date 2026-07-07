@@ -24,6 +24,14 @@ function Emit-Line($obj) {
   [Console]::Out.Flush()
 }
 
+# HKCR: is NOT one of PowerShell's default PSDrives (only HKLM:/HKCU: are
+# created automatically) - confirmed via Get-PSDrive. Every path below is
+# under HKEY_CLASSES_ROOT, so without this, every Test-Path against
+# "HKCR:..." silently returns $false and the whole script is a no-op.
+if (-not (Get-PSDrive -Name HKCR -ErrorAction SilentlyContinue)) {
+  New-PSDrive -Name HKCR -PSProvider Registry -Root HKEY_CLASSES_ROOT -Scope Script -ErrorAction SilentlyContinue | Out-Null
+}
+
 $ROOTS = @(
   @{ name = 'Folder background'; registry = 'HKCR:Directory\Background\shellex\ContextMenuHandlers' },
   @{ name = 'Drive';              registry = 'HKCR:Drive\shellex\ContextMenuHandlers' },
