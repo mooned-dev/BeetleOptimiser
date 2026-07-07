@@ -204,6 +204,7 @@ export default function App() {
   const [slimmerOps, setSlimmerOps] = useState([]);
   const [slimmerBusy, setSlimmerBusy] = useState(false);
   const [slimmerConfirm, setSlimmerConfirm] = useState(null);
+  const [slimmerResult, setSlimmerResult] = useState(null);
 
   // Mode Switcher
   const [modesOpen, setModesOpen] = useState(false);
@@ -224,6 +225,8 @@ export default function App() {
   const [regDefragOpen, setRegDefragOpen] = useState(false);
   const [regDefragHives, setRegDefragHives] = useState([]);
   const [regDefragBusy, setRegDefragBusy] = useState(false);
+  const [regDefragResult, setRegDefragResult] = useState(null);
+  const [regDefragConfirm, setRegDefragConfirm] = useState(null);
 
   // Action Center
   const [actionCenterOpen, setActionCenterOpen] = useState(false);
@@ -243,16 +246,21 @@ export default function App() {
   const [backupCleanerOpen, setBackupCleanerOpen] = useState(false);
   const [backupCleanerTargets, setBackupCleanerTargets] = useState([]);
   const [backupCleanerBusy, setBackupCleanerBusy] = useState(false);
+  const [backupCleanerResult, setBackupCleanerResult] = useState(null);
+  const [backupCleanerConfirm, setBackupCleanerConfirm] = useState(false);
 
   // Defrag on Next Boot
   const [defragBootOpen, setDefragBootOpen] = useState(false);
   const [defragBootState, setDefragBootState] = useState(null);
   const [defragBootBusy, setDefragBootBusy] = useState(false);
+  const [defragBootResult, setDefragBootResult] = useState(null);
 
   // Browser Helper Objects
   const [bhoOpen, setBhoOpen] = useState(false);
   const [bhoList, setBhoList] = useState([]);
   const [bhoBusy, setBhoBusy] = useState(false);
+  const [bhoResult, setBhoResult] = useState(null);
+  const [bhoConfirm, setBhoConfirm] = useState(false);
 
   // -------------------------------------------------------------------
   // Handlers
@@ -571,10 +579,11 @@ export default function App() {
       const token = await window.beetleAPI.optimizer.requestConfirm('slimmer-apply');
       const result = await window.beetleAPI.optimizer.slimmerApply(slimmerConfirm.id, token);
       const err = (result.items || []).find((i) => i.event === 'error');
-      if (err) setWiperResult(`Slimmer: ${err.reason}`);
+      if (err) setSlimmerResult(`Slimmer: ${err.reason}`);
       setSlimmerConfirm(null);
       await handleSlimmerClick();
     } catch (e) {
+      setSlimmerResult(`Slimmer failed: ${e.message || e}`);
       setSlimmerBusy(false);
     }
   }
@@ -683,9 +692,13 @@ export default function App() {
       const token = await window.beetleAPI.optimizer.requestConfirm('backup-cleaner-apply');
       const r = await window.beetleAPI.optimizer.backupCleanerApply(token);
       const d = (r.items || []).find(i => i.event === 'done');
+      setBackupCleanerConfirm(false);
       await handleBackupCleanerClick();
-      setDebugResult(`Backup cleaner freed ${(d?.total_freed_bytes / 1024 / 1024).toFixed(1) || 0} MB`);
-    } catch (e) { setBackupCleanerBusy(false); }
+      setBackupCleanerResult(`Backup cleaner freed ${(d?.total_freed_bytes / 1024 / 1024).toFixed(1) || 0} MB`);
+    } catch (e) {
+      setBackupCleanerResult(`Backup cleaner failed: ${e.message || e}`);
+      setBackupCleanerBusy(false);
+    }
   }
 
   // Defrag on Next Boot
@@ -705,7 +718,10 @@ export default function App() {
       const token = await window.beetleAPI.optimizer.requestConfirm('defrag-on-boot-apply');
       await window.beetleAPI.optimizer.defragOnBootApply(token);
       await handleDefragBootClick();
-    } catch (e) { setDefragBootBusy(false); }
+    } catch (e) {
+      setDefragBootResult(`Schedule failed: ${e.message || e}`);
+      setDefragBootBusy(false);
+    }
   }
 
   // Browser Helper Objects
@@ -725,9 +741,13 @@ export default function App() {
       const token = await window.beetleAPI.optimizer.requestConfirm('bho-apply');
       const r = await window.beetleAPI.optimizer.bhoApply(token);
       const d = (r.items || []).find(i => i.event === 'done');
+      setBhoConfirm(false);
       await handleBhoClick();
-      setDebugResult(`Removed ${d?.removed || 0} orphan browser helper objects`);
-    } catch (e) { setBhoBusy(false); }
+      setBhoResult(`Removed ${d?.removed || 0} orphan browser helper objects`);
+    } catch (e) {
+      setBhoResult(`BHO cleanup failed: ${e.message || e}`);
+      setBhoBusy(false);
+    }
   }
 
   // Registry Defrag (hive listing + compact button)
@@ -748,9 +768,17 @@ export default function App() {
       const token = await window.beetleAPI.optimizer.requestConfirm('registry-defrag-compact');
       const result = await window.beetleAPI.optimizer.registryDefragCompact(token);
       const err = (result.items || []).find((i) => i.event === 'error');
-      if (err) setDebugResult(`Defrag: ${err.reason}`);
+      if (err) setRegDefragResult(`Defrag: ${err.reason}`);
+      // ConfirmModal is a fully controlled component with no auto-close of
+      // its own (see ConfirmModal.jsx) - without this, the dialog stayed
+      // open forever after a successful compact (busy would clear via
+      // handleRegDefragClick()'s own finally, but "open" never did).
+      setRegDefragConfirm(null);
       await handleRegDefragClick();
-    } catch (e) { setRegDefragBusy(false); }
+    } catch (e) {
+      setRegDefragResult(`Defrag failed: ${e.message || e}`);
+      setRegDefragBusy(false);
+    }
   }
 
   // Action Center cleaner
@@ -1419,6 +1447,9 @@ export default function App() {
         onConfirm={handleConfirmSlimmer}
         onCancel={() => setSlimmerConfirm(null)}
       />
+      {slimmerResult && (
+        <div style={{ position: 'fixed', bottom: 100, left: 620, zIndex: 30, fontSize: 11, color: c.textSecondary, background: c.bgSecondary, padding: '6px 10px', border: `1px solid ${c.border}`, borderRadius: 6, maxWidth: 400 }}>{slimmerResult}</div>
+      )}
 
       {/* MODE SWITCHER */}
       <ItemListModal
@@ -1492,24 +1523,27 @@ export default function App() {
         onAction={(item) => {
           if (regDefragBusy) return;
           if (regDefragHives.find((h) => h.id === item.id) && !regDefragHives.find((h) => h.id === item.id).unloadable) {
-            setDebugResult('Only user (HKCU/HKU) hives can be safely compacted mid-session. Use the schedule-at-logout feature instead.');
+            setRegDefragResult('Only user (HKCU/HKU) hives can be safely compacted mid-session. Use the schedule-at-logout feature instead.');
             return;
           }
-          setActionCenterConfirm({ id: 'compact', label: 'Compact ' + item.id });
+          setRegDefragConfirm({ label: 'Compact ' + item.id });
         }}
         onClose={() => setRegDefragOpen(false)}
       />
       <ConfirmModal
         c={c}
-        open={!!actionCenterConfirm && actionCenterConfirm.id === 'compact'}
+        open={!!regDefragConfirm}
         busy={regDefragBusy}
         title="Compact user registry hive?"
         message="Writes the loaded HKCU hive to a temporary file, then reloads it - effectively rebuilding the hive layout. May briefly affect apps with cached handles. The script reports savings at the end."
-        details={actionCenterConfirm?.id === 'compact' ? actionCenterConfirm.label : null}
+        details={regDefragConfirm?.label}
         confirmLabel="Compact"
         onConfirm={handleRegDefragCompact}
-        onCancel={() => setActionCenterConfirm(null)}
+        onCancel={() => setRegDefragConfirm(null)}
       />
+      {regDefragResult && (
+        <div style={{ position: 'fixed', bottom: 100, left: 920, zIndex: 30, fontSize: 11, color: c.textSecondary, background: c.bgSecondary, padding: '6px 10px', border: `1px solid ${c.border}`, borderRadius: 6, maxWidth: 380 }}>{regDefragResult}</div>
+      )}
 
       {/* ACTION CENTER CLEANER */}
       <ItemListModal
@@ -1532,7 +1566,7 @@ export default function App() {
       />
       <ConfirmModal
         c={c}
-        open={!!actionCenterConfirm && actionCenterConfirm.id !== 'compact'}
+        open={!!actionCenterConfirm}
         busy={actionCenterBusy}
         title="Apply this Action Center op?"
         message={`This touches notification area, recent documents, and Tips registry values. It's reversible - just toggle the setting back to its previous value in the same way.`}
@@ -1575,9 +1609,23 @@ export default function App() {
           actionLabelOverride: t.absent ? '—' : 'Remove',
         }))}
         actionLabel="Clean all"
-        onAction={() => { handleBackupCleanerApply(); }}
+        onAction={() => setBackupCleanerConfirm(true)}
         onClose={() => setBackupCleanerOpen(false)}
       />
+      <ConfirmModal
+        c={c}
+        open={backupCleanerConfirm}
+        busy={backupCleanerBusy}
+        title="Delete all backup artifacts?"
+        message="Permanently removes Windows.old, upgrade staging folders, and old crash dumps found above. This can free several GB but cannot be undone - you will not be able to roll back to the prior Windows install."
+        details={backupCleanerTargets.filter((t) => !t.absent).map((t) => t.label).join(', ') || null}
+        confirmLabel="Clean all"
+        onConfirm={handleBackupCleanerApply}
+        onCancel={() => setBackupCleanerConfirm(false)}
+      />
+      {backupCleanerResult && (
+        <div style={{ position: 'fixed', bottom: 140, left: 620, zIndex: 30, fontSize: 11, color: c.textSecondary, background: c.bgSecondary, padding: '6px 10px', border: `1px solid ${c.border}`, borderRadius: 6, maxWidth: 400 }}>{backupCleanerResult}</div>
+      )}
 
       {/* DEFRAG ON NEXT BOOT */}
       {defragBootState && (
@@ -1595,10 +1643,13 @@ export default function App() {
           actionLabel="Schedule"
           onAction={(item) => {
             if (item.id === 'apply') handleDefragBootApply();
-            else setDebugResult('Use "Schedule defrag for next logon" to set this up.');
+            else setDefragBootResult('Use "Schedule defrag for next logon" to set this up.');
           }}
           onClose={() => setDefragBootOpen(false)}
         />
+      )}
+      {defragBootResult && (
+        <div style={{ position: 'fixed', bottom: 140, left: 920, zIndex: 30, fontSize: 11, color: c.textSecondary, background: c.bgSecondary, padding: '6px 10px', border: `1px solid ${c.border}`, borderRadius: 6, maxWidth: 380 }}>{defragBootResult}</div>
       )}
 
       {/* BHO */}
@@ -1614,9 +1665,23 @@ export default function App() {
           actionLabelOverride: b.status === 'orphan' ? 'Remove' : '—',
         }))}
         actionLabel="Clean orphans"
-        onAction={() => { handleBhoApply(); }}
+        onAction={() => setBhoConfirm(true)}
         onClose={() => setBhoOpen(false)}
       />
+      <ConfirmModal
+        c={c}
+        open={bhoConfirm}
+        busy={bhoBusy}
+        title="Remove orphan Browser Helper Objects?"
+        message="Deletes the registry entries for every BHO/IE extension listed above whose backing file no longer exists on disk. Entries whose file is still present are never touched."
+        details={`${bhoList.filter((b) => b.status === 'orphan').length} orphan entr${bhoList.filter((b) => b.status === 'orphan').length === 1 ? 'y' : 'ies'} found`}
+        confirmLabel="Clean orphans"
+        onConfirm={handleBhoApply}
+        onCancel={() => setBhoConfirm(false)}
+      />
+      {bhoResult && (
+        <div style={{ position: 'fixed', bottom: 140, left: 220, zIndex: 30, fontSize: 11, color: c.textSecondary, background: c.bgSecondary, padding: '6px 10px', border: `1px solid ${c.border}`, borderRadius: 6, maxWidth: 380 }}>{bhoResult}</div>
+      )}
 
       {/* "Add tool" chooser - lists every other tab and switches to it */}
       <ItemListModal
