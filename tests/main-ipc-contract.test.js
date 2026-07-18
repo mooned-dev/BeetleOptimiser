@@ -406,3 +406,149 @@ test('openExternal: accepts https with port, query, fragment', () => {
   assert.equal(u.hostname, 'example.com');
   assert.equal(u.port, '8443');
 });
+
+
+// ====================== system:shell allowlist ============================
+
+// Mirror of the system:shell handler. The handler accepts either
+// `string, ...args` (old call shape) or `{ command, args }` (new shape).
+// It then enforces a tight allowlist:
+//   - 'start <one-arg>'         if and only if the arg starts with ms-settings:
+//   - 'powershell -NoProfile -Command <cmd>'  if and only if <cmd> is
+//     a single Remove-Item on a rescue backup file
+// Anything else throws.
+
+function shellCheck(payload, args) {
+  let cmd, cmdArgs;
+  if (typeof payload === 'string') {
+    cmd = payload;
+    cmdArgs = Array.isArray(args) ? args : [];
+  } else {
+    cmd = payload?.command;
+    cmdArgs = Array.isArray(payload?.args) ? payload.args : [];
+  }
+  if (typeof cmd !== 'string' || !cmd) {
+    throw new Error('shell: command is required');
+  }
+  if (cmd === 'start') {
+    if (cmdArgs.length !== 1 || typeof cmdArgs[0] !== 'string' || !cmdArgs[0].startsWith('ms-settings:')) {
+      throw new Error('shell: start requires one ms-settings: arg');
+    }
+  } else if (cmd === 'powershell') {
+    if (cmdArgs.length !== 3 || cmdArgs[0] !== '-NoProfile' || cmdArgs[1] !== '-Command'
+        || typeof cmdArgs[2] !== 'string') {
+      throw new Error('shell: powershell requires -NoProfile -Command <one-command>');
+    }
+    const cmd2 = cmdArgs[2].trim();
+    const removeItemRe = new RegExp(
+      '^Remove-Item\\s+-LiteralPath\\s+\\$env:LOCALAPPDATA\\\\BeetleOptimiser\\\\rescue\\\\[\\w\\-.]+\\s+-ErrorAction\\s+SilentlyContinue;\\s*exit\\s+0;?\\s*$',
+      'i',
+    );
+    if (!removeItemRe.test(cmd2)) {
+      throw new Error('shell: powershell -Command must be a single Remove-Item on a rescue backup file');
+    }
+  } else {
+    throw new Error(`shell: command "${cmd}" is not allowed`);
+  }
+  return { cmd, args: cmdArgs };
+}
+
+test('system:shell: accepts start ms-settings:defaultapps', () => {
+  const r = shellCheck('start', ['ms-settings:defaultapps']);
+  assert.equal(r.cmd, 'start');
+});
+
+test('system:shell: accepts start ms-settings:appsvolume', () => {
+  shellCheck('start', ['ms-settings:appsvolume']);
+});
+
+test('system:shell: accepts object-shape call site', () => {
+  const r = shellCheck({ command: 'start', args: ['ms-settings:defaultapps'] });
+  assert.equal(r.cmd, 'start');
+});
+
+test('system:shell: rejects start with non-ms-settings arg', () => {
+  assert.throws(
+    () => shellCheck('start', ['control']),
+    /ms-settings:/,
+  );
+});
+
+test('system:shell: rejects start with multiple args', () => {
+  assert.throws(
+    () => shellCheck('start', ['ms-settings:defaultapps', 'extra']),
+    /one ms-settings:/,
+  );
+});
+
+test('system:shell: rejects start with no args', () => {
+  assert.throws(() => shellCheck('start', []), /ms-settings:/);
+});
+
+test('system:shell: accepts the rescue Remove-Item pattern', () => {
+  const r = shellCheck(
+    { command: 'powershell', args: [
+      '-NoProfile',
+      '-Command',
+      'Remove-Item -LiteralPath $env:LOCALAPPDATA\\BeetleOptimiser\\rescue\\tweak-1.json -ErrorAction SilentlyContinue; exit 0',
+    ]},
+  );
+  assert.equal(r.cmd, 'powershell');
+});
+
+test('system:shell: rejects powershell with -NoProfile -Command on a non-rescue path', () => {
+  assert.throws(
+    () => shellCheck({
+      command: 'powershell', args: [
+        '-NoProfile',
+        '-Command',
+        'Remove-Item -LiteralPath C:\\Windows\\System32\\drivers\\etc\\hosts -ErrorAction SilentlyContinue; exit 0',
+      ],
+    }),
+    /Remove-Item on a rescue backup/,
+  );
+});
+
+test('system:shell: rejects powershell smuggling `;` chained command', () => {
+  assert.throws(
+    () => shellCheck({
+      command: 'powershell', args: [
+        '-NoProfile',
+        '-Command',
+        'Remove-Item -LiteralPath $env:LOCALAPPDATA\\BeetleOptimiser\\rescue\\a.json; rmdir C:\\Users\\you -Recurse; exit 0',
+      ],
+    }),
+    /Remove-Item on a rescue backup/,
+  );
+});
+
+test('system:shell: rejects powershell with -File (not -Command)', () => {
+  assert.throws(
+    () => shellCheck({
+      command: 'powershell', args: ['-NoProfile', '-File', 'C:\\evil.ps1'],
+    }),
+    /-NoProfile -Command/,
+  );
+});
+
+test('system:shell: rejects cmd.exe (not in allowlist)', () => {
+  assert.throws(
+    () => shellCheck({ command: 'cmd', args: ['/c', 'format C:'] }),
+    /not allowed/,
+  );
+});
+
+test('system:shell: rejects bash / sh / powershell-encoded / arbitrary commands', () => {
+  for (const cmd of ['bash', 'sh', 'cmd.exe', 'wscript', 'mshta', 'rundll32']) {
+    assert.throws(
+      () => shellCheck({ command: cmd, args: [] }),
+      /not allowed/,
+    );
+  }
+});
+
+test('system:shell: rejects missing command entirely', () => {
+  assert.throws(() => shellCheck({ args: ['x'] }), /command is required/);
+  assert.throws(() => shellCheck(null), /command is required/);
+  assert.throws(() => shellCheck(''), /command is required/);
+});

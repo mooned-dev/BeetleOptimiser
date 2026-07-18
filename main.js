@@ -542,11 +542,74 @@ ipcMain.handle('chat:ask', async (_, question) => {
 });
 
 ipcMain.handle('system:shell', async (_, payload) => {
-  const cmd = payload?.command;
-  const args = Array.isArray(payload?.args) ? payload.args : [];
+  // Command allowlist. The renderer used to be able to call this
+  // handler with any command + args, which is a privileged escape
+  // hatch into a fully-arbitrary child process. Now we only allow
+  // a small, well-justified set of (command, args-prefix) pairs:
+  //
+  //   1. 'powershell' with -NoProfile + a -Command arg
+  //      Used by CareCenterView's "Forget" button to delete a rescue
+  //      backup file. The args go directly to powershell -Command
+  //      which is constrained to a single Remove-Item call by the
+  //      validator (see below).
+  //   2. 'start' with one string arg starting with 'ms-settings:'
+  //      Used by ProtectView to open Windows Settings panels.
+  //
+  // Anything else throws. The renderer is documented to call this
+  // with `{ command, args }`; old call sites that pass string + arg
+  // directly are mapped via the same shape below.
+
+  // Normalize: accept both `string, ...args` and `{ command, args }`
+  // call shapes so the existing renderer call sites keep working
+  // without a separate refactor.
+  let cmd, args;
+  if (typeof payload === 'string') {
+    cmd = payload;
+    args = Array.isArray(arguments[1]) ? arguments[1] : [];
+  } else {
+    cmd = payload?.command;
+    args = Array.isArray(payload?.args) ? payload.args : [];
+  }
   if (typeof cmd !== 'string' || !cmd) {
     throw new Error('shell: command is required');
   }
+
+  // Allowlist. The check is order-sensitive: 'start' is matched
+  // before 'powershell' would be matched (it isn't, but the
+  // principle of exact-prefix matching applies).
+  if (cmd === 'start') {
+    // Used to open Windows Settings. Args must be exactly one
+    // string starting with `ms-settings:`.
+    if (args.length !== 1 || typeof args[0] !== 'string' || !args[0].startsWith('ms-settings:')) {
+      throw new Error('shell: start requires one ms-settings: arg');
+    }
+  } else if (cmd === 'powershell') {
+    // The PowerShell call path used by CareCenterView's Forget
+    // button. Args must be exactly:
+    //   ['-NoProfile', '-Command', '<single powershell command>']
+    if (args.length !== 3 || args[0] !== '-NoProfile' || args[1] !== '-Command'
+        || typeof args[2] !== 'string') {
+      throw new Error('shell: powershell requires -NoProfile -Command <one-command>');
+    }
+    // The -Command string is allowed to be a Remove-Item on a
+    // rescue backup file (the documented case). Refuse anything else
+    // so a malicious renderer can't smuggle `; rm -rf /` into the
+    // same call. The regex is built from a string literal (not a
+    // /.../ literal) so the embedded backslash + dollar-sign
+    // characters don't break JS parsing.
+    const cmd2 = args[2].trim();
+    const removeItemRe = new RegExp(
+      '^Remove-Item\\s+-LiteralPath\\s+\\$env:LOCALAPPDATA\\\\BeetleOptimiser\\\
+escue\\\\[\\w\\-.]+\\s+-ErrorAction\\s+SilentlyContinue;\\s*exit\\s+0;?\\s*$',
+      'i',
+    );
+    if (!removeItemRe.test(cmd2)) {
+      throw new Error('shell: powershell -Command must be a single Remove-Item on a rescue backup file');
+    }
+  } else {
+    throw new Error(`shell: command "${cmd}" is not allowed`);
+  }
+
   return new Promise((resolve) => {
     const child = spawn(cmd, args, { windowsHide: true });
     let stderr = '';
