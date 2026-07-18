@@ -160,6 +160,30 @@ export default function AskQuestionView({ c, isLight }) {
     threadEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, thinking]);
 
+  // Pick up an article selected via the Ctrl+K command palette.
+  // CommandPalette.jsx writes the article slug to
+  // sessionStorage('beetle-prefill-article') when the user picks
+  // an article result, then navigates to this tab. We poll
+  // sessionStorage on a 250ms timer to consume that value as the
+  // chat input (the RAG search ranks the slug top because every
+  // word in the slug appears in the article's title + body). The
+  // poll is the only practical way to communicate between two
+  // unrelated components without wiring a global event bus, and
+  // 250ms is cheap (it's a single key read on every tick). The
+  // interval clears itself when the timer is unmounted (cleanup
+  // runs on tab switch).
+  useEffect(() => {
+    const id = setInterval(() => {
+      let next = null;
+      try { next = sessionStorage.getItem('beetle-prefill-article'); } catch { return; }
+      if (!next) return;
+      try { sessionStorage.removeItem('beetle-prefill-article'); } catch {}
+      sendMessage(next);
+    }, 250);
+    return () => clearInterval(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   async function sendMessage(text) {
     const trimmed = text.trim();
     if (!trimmed || thinking) return;

@@ -95,6 +95,27 @@ window.beetleAPI.optimizer.scanJunkFiles()
 // the per-category cards.
 ```
 
+## Example 4: the confirmation-token IPC contract, in isolation
+
+`examples/extension/minimal-token-gated-ipc/server.js` is a Node-only
+demo of the same contract main.js uses for every destructive handler.
+No Electron, no PowerShell, no DOM. Just `node examples/extension/minimal-token-gated-ipc/server.js`
+prints a 5-step walkthrough that exercises:
+
+- `mint(action)` returns a fresh 30-second single-use UUID token
+- `fire(token, action)` succeeds only when the token matches the
+  action AND has not been consumed AND has not expired
+- `cancel(token)` drops an abandoned token (the renderer side calls
+  this when the user dismisses a ConfirmModal without clicking Confirm)
+- `sweep()` evicts tokens whose `expires` is in the past (called by
+  `setInterval(60s)` in production main.js)
+- A 200-ms wait past the token's TTL proves `fire` rejects the
+  expired token
+
+This is a useful template if you want to fork the project and add
+your own custom destructive action. The contract - "mint, then fire
+later, single-use, expires fast" - is the whole security guarantee.
+
 ## What next
 
 - Read `../README.md` for the canonical install + dev workflow.
