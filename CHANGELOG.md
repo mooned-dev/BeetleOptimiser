@@ -24,6 +24,15 @@ on github.com/ORCHORDS/BeetleOptimiser/releases/tag/release-2026-07-18-v1.
 - 12 new tests for the localStorage-persistence hooks + 6 new tests
   for the spawnOptimizer timeout (settle-once, fast-script-doesn't-fire-kill,
   late-close-is-ignored, QuotaExceededError swallows silently)
+- Persisted active-tab + nav across app restarts
+  (`useActiveTab` / `useActiveNav` read + write `localStorage`)
+- CustomEvent-based 'beetle:prefill-article' bus replaces the
+  sessionStorage-poll hack for the Ctrl+K palette -> Ask a Question
+  handoff (6 new tests)
+- Telemetry auto-respawn with 1s -> 30s exponential backoff
+  (3 new tests)
+
+Test count: 46 -> 95 passing.
 
 ### Fixed
 - system:open-external URL-scheme allowlist (http / https / mailto only)
