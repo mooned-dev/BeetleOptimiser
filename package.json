@@ -22,8 +22,8 @@
     "system-utility",
     "open-source"
   ],
-  "homepage": "https://github.com/orchords-com/BeetleOptimiser",
-  "bugs": "https://github.com/orchords-com/BeetleOptimiser/issues",
+  "homepage": "https://github.com/ORCHORDS/BeetleOptimiser",
+  "bugs": "https://github.com/ORCHORDS/BeetleOptimiser/issues",
   "author": "ORCHIDS.COM <crm@orchords.com>",
   "license": "MIT",
   "engines": {

@@ -116,7 +116,7 @@ calls without a token are rejected before any PowerShell is spawned.
 
 ## Reporting bugs
 
-Open an issue at https://github.com/orchords-com/BeetleOptimiser/issues
+Open an issue at https://github.com/ORCHORDS/BeetleOptimiser/issues
 with:
 - your Windows build (`winver` output)
 - the exact command that failed (which tab + which button)

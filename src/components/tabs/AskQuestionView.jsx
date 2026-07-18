@@ -240,7 +240,7 @@ export default function AskQuestionView({ c, isLight }) {
             This app is fully local. No account, no telemetry, no network calls. The 51 hand-written articles below are answered client-side using keyword matching.
           </div>
           <a
-            href="https://github.com/orchords-com/BeetleOptimiser/issues"
+            href="https://github.com/ORCHORDS/BeetleOptimiser/issues"
             target="_blank"
             rel="noreferrer"
             className="theme-pill-btn"
@@ -253,7 +253,7 @@ export default function AskQuestionView({ c, isLight }) {
             }}
           >Open GitHub issue</a>
           <a
-            href="https://github.com/orchords-com/BeetleOptimiser/blob/main/LICENSE"
+            href="https://github.com/ORCHORDS/BeetleOptimiser/blob/master/LICENSE"
             target="_blank"
             rel="noreferrer"
             className="theme-pill-btn"
