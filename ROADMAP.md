@@ -5,12 +5,22 @@ shorter than the original `PLAN.md` (which described a now-cancelled
 SaaS direction). The current product is **fully local** — no server, no
 auth, no paid tier, no telemetry sent anywhere.
 
+> **v1.0 shipped 2026-07-18.** See
+> [release-2026-07-18-v1](https://github.com/ORCHORDS/BeetleOptimiser/releases/tag/release-2026-07-18-v1).
+> This is the first public release with the full Electron 33 + React 19
+> + PowerShell stack (the older v0.2.0 was a different Electron app
+> deployed as a binary-only repo before going open-source under MIT).
+
 ## Done
 
-- [x] 36 PowerShell optimizer scripts under `scripts/optimize-*.ps1`
-- [x] ~93 IPC handlers in `main.js`
+- [x] 38 PowerShell optimizer scripts under `scripts/optimize-*.ps1`
+- [x] 82 IPC handlers in `main.js` + 84 contextBridge methods in `preload.js`
 - [x] 12 tabs + 22 dashboard tiles, every one wired to a real backend
 - [x] Confirmation-token gate for destructive actions
+- [x] Input-validation regexes on every destructive handler
+- [x] Ctrl+K global search palette (tabs + tiles + 51 RAG articles + help)
+- [x] 26 unit tests (`npm test`) covering validators + the token
+      contract + the NDJSON parser + the RAG algorithm
 - [x] MIT license + LICENSE file + CONTRIBUTING + SECURITY + CODE_OF_CONDUCT + .github templates
 - [x] Single-instance lock + frameless window with custom Min / Close
 - [x] Live telemetry via persistent `telemetry.ps1` (CPU / RAM / GPU / NET / per-drive)

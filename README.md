@@ -21,8 +21,8 @@ turns those lines into a card you can confirm or cancel.
 
 | | | |
 |--|--|--|
-| **36 PowerShell scripts** in `scripts/` | **12 tabs** + **22 dashboard tiles** | **~75 IPC handlers** in `main.js` |
-| **51 RAG articles** for the Ask-a-Question tab | **9 tests** covering validation + token + RAG | **Ctrl+K** global search |
+| **38 PowerShell scripts** in `scripts/` | **12 tabs** + **22 dashboard tiles** | **82 IPC handlers** in `main.js` |
+| **51 RAG articles** for the Ask-a-Question tab | **26 tests** covering validation + token + RAG | **Ctrl+K** global search |
 
 ## Tabs
 
