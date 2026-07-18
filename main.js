@@ -16,14 +16,11 @@ const crypto = require('crypto');
 const http = require('http');
 const { spawn } = require('child_process');
 
-// Google's OAuth sign-in is no longer done inside this app at all (see the
-// loopback-redirect flow further down) - Google permanently blocks OAuth
-// from any embedded webview, including an Electron BrowserWindow, so
-// spoofing the UA for that purpose doesn't work and isn't attempted. This
-// fallback stays because it's still useful for the app's other requests
-// to Google APIs (Firestore, etc.) looking like a normal desktop browser
-// rather than "Electron/x.y.z", set this early since app.userAgentFallback
-// only affects requests made after it's assigned.
+// Desktop Chrome User-Agent. Without this every request goes out identifying
+// itself as "Electron/x.y.z" which some servers (e.g. telemetry services,
+// crash dump endpoints) reject or de-prioritise. Assigning this early is
+// important since app.userAgentFallback only affects requests issued after
+// it's assigned.
 const DESKTOP_CHROME_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36';
 app.userAgentFallback = DESKTOP_CHROME_UA;
 
@@ -517,197 +514,6 @@ ipcMain.handle('chat:ask', async (_, question) => {
   }
 });
 
-// ----------------------------------------------------------------------
-// OAuth sign-in via an external-browser + custom-protocol handoff.
-//
-// Google permanently blocks OAuth from ANY embedded webview (including an
-// Electron BrowserWindow popup) - a hard security policy enforced since
-// 2021 (see developers.googleblog.com's "Upcoming security changes to
-// Google's OAuth 2.0 authorization endpoint in embedded webviews"),
-// independent of User-Agent spoofing. So the consent screen has to run in
-// the user's real system browser (shell.openExternal).
-//
-// A plain http://127.0.0.1:PORT loopback redirect (RFC 8252, Google's own
-// recommended installed-app flow) works, but leaves the raw address in the
-// browser's address bar for the final step. Google explicitly disallows
-// registering a custom URI scheme (e.g. beetleoptimiser://) directly as an
-// OAuth redirect_uri - it's blocked as an anti-impersonation measure (see
-// developers.googleblog.com's "Improving user safety in OAuth flows through
-// new OAuth Custom URI scheme restrictions"). The pattern real desktop apps
-// (Slack, VS Code, etc.) use instead: register a normal https redirect_uri
-// - a small hosted "bridge" page - and have THAT page's own JS immediately
-// redirect to the custom scheme. Google's server only ever sees a valid
-// https URL; the custom-scheme hop happens after Google is out of the
-// picture entirely.
-//
-// The bridge here is a Cloudflare Worker at https://auth.mooned.dev/callback
-// (source: see the "beetle-oauth-bridge" Worker in the mooned.dev Cloudflare
-// account) that forwards every query param verbatim to
-// beetleoptimiser://oauth-callback. It's provider-agnostic - which of the
-// two flows below is waiting is tracked here via the `state` param, not by
-// anything the bridge page does.
-const GOOGLE_WEB_CLIENT_ID = '405417987229-v734pmv7ik4nu538v2140lpf0tlvvfv3.apps.googleusercontent.com';
-const GOOGLE_WEB_CLIENT_SECRET = '<REDACTED>';
-const GITHUB_CLIENT_ID = '<REDACTED>';
-const GITHUB_CLIENT_SECRET = '<REDACTED>';
-const OAUTH_BRIDGE_REDIRECT_URI = 'https://auth.mooned.dev/callback';
-const OAUTH_PROTOCOL = 'beetleoptimiser';
-
-// A custom-protocol activation launches a NEW OS process of this same exe
-// with the URL as an argv entry - requestSingleInstanceLock + 'second-instance'
-// (below, near app.whenReady) forwards that URL to the already-running
-// instance instead of opening a second app window.
-//
-// Electron's own docs call out that this registration only works as a bare
-// "electron.exe %1" in the PACKAGED app, where process.execPath IS the whole
-// app. Running from source ("electron.exe ."), the OS would launch plain
-// electron.exe with the callback URL as its only argument - Electron then
-// tries to interpret that URL as an app path to load and fails with
-// "Cannot find module <url>". The documented fix is to explicitly pass the
-// app directory as an extra argument when unpackaged.
-if (app.isPackaged) {
-  app.setAsDefaultProtocolClient(OAUTH_PROTOCOL);
-} else {
-  app.setAsDefaultProtocolClient(OAUTH_PROTOCOL, process.execPath, [path.resolve(process.argv[1])]);
-}
-
-const pendingOAuthCallbacks = new Map(); // state -> resolve(URLSearchParams)
-
-function handleProtocolUrl(url) {
-  if (typeof url !== 'string' || !url.startsWith(`${OAUTH_PROTOCOL}://`)) return;
-  let params;
-  try {
-    params = new URL(url).searchParams;
-  } catch (e) {
-    return;
-  }
-  const state = params.get('state');
-  const resolve = pendingOAuthCallbacks.get(state);
-  if (resolve) {
-    pendingOAuthCallbacks.delete(state);
-    resolve(params);
-  }
-}
-
-function waitForProtocolCallback(state, timeoutMs = 5 * 60 * 1000) {
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => {
-      pendingOAuthCallbacks.delete(state);
-      reject(new Error('Sign-in timed out'));
-    }, timeoutMs);
-    pendingOAuthCallbacks.set(state, (params) => {
-      clearTimeout(timer);
-      resolve(params);
-    });
-  });
-}
-
-// If the user closes/abandons the browser tab without finishing, the
-// promise above would otherwise just sit there until the 5-minute timeout -
-// the renderer's "Waiting for browser..." button had no way to escape that
-// except waiting it out. This lets a fresh sign-in click (or any explicit
-// cancel) immediately unstick it: resolving with a synthetic error makes
-// externalBrowserOAuth's existing params.has('error') path throw right away.
-ipcMain.handle('auth:cancel-login', () => {
-  for (const resolve of pendingOAuthCallbacks.values()) {
-    resolve(new URLSearchParams({ error: 'cancelled' }));
-  }
-  pendingOAuthCallbacks.clear();
-  return { ok: true };
-});
-
-// Runs one full external-browser OAuth round-trip: opens the authorize URL
-// in the system browser, waits for the bridge page to hand control back via
-// the custom protocol, then exchanges the code for tokens via a direct POST
-// (no browser involved, so no CORS issue and the client secret never leaves
-// this process).
-async function externalBrowserOAuth({ buildAuthorizeUrl, tokenUrl, buildTokenBody }) {
-  const state = crypto.randomUUID();
-  const callbackPromise = waitForProtocolCallback(state);
-  await shell.openExternal(buildAuthorizeUrl(state));
-
-  const params = await callbackPromise;
-  if (params.has('error')) {
-    throw new Error(`OAuth provider returned an error: ${params.get('error')}`);
-  }
-  const code = params.get('code');
-  if (!code) throw new Error('OAuth callback did not include an authorization code');
-
-  // net.fetch is Electron's documented replacement for the Fetch API in
-  // the main process (respects the OS/Chromium network stack, incl.
-  // proxy config) - see electronjs.org/docs/latest/api/net.
-  const response = await net.fetch(tokenUrl, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Accept': 'application/json' },
-    body: new URLSearchParams(buildTokenBody(code)).toString(),
-  });
-  if (!response.ok) {
-    throw new Error(`Token exchange failed (${response.status}): ${await response.text()}`);
-  }
-  const body = await response.json();
-  // GitHub's token endpoint returns HTTP 200 even on failure (e.g.
-  // bad_verification_code, redirect_uri_mismatch), with the actual error in
-  // the JSON body - response.ok alone misses this, so the exchange looked
-  // "successful" while tokens.access_token was silently undefined.
-  if (body.error) {
-    throw new Error(`Token exchange failed: ${body.error_description || body.error}`);
-  }
-  return body;
-}
-
-ipcMain.handle('auth:login-google', async () => {
-  const codeVerifier = crypto.randomBytes(32).toString('base64url');
-  const codeChallenge = crypto.createHash('sha256').update(codeVerifier).digest('base64url');
-
-  const tokens = await externalBrowserOAuth({
-    buildAuthorizeUrl: (state) => {
-      const u = new URL('https://accounts.google.com/o/oauth2/v2/auth');
-      u.searchParams.set('client_id', GOOGLE_WEB_CLIENT_ID);
-      u.searchParams.set('redirect_uri', OAUTH_BRIDGE_REDIRECT_URI);
-      u.searchParams.set('response_type', 'code');
-      u.searchParams.set('scope', 'openid email profile');
-      u.searchParams.set('state', state);
-      u.searchParams.set('code_challenge', codeChallenge);
-      u.searchParams.set('code_challenge_method', 'S256');
-      u.searchParams.set('prompt', 'select_account');
-      return u.toString();
-    },
-    tokenUrl: 'https://oauth2.googleapis.com/token',
-    buildTokenBody: (code) => ({
-      code,
-      client_id: GOOGLE_WEB_CLIENT_ID,
-      client_secret: GOOGLE_WEB_CLIENT_SECRET,
-      redirect_uri: OAUTH_BRIDGE_REDIRECT_URI,
-      grant_type: 'authorization_code',
-      code_verifier: codeVerifier,
-    }),
-  });
-
-  return { provider: 'google', idToken: tokens.id_token, accessToken: tokens.access_token };
-});
-
-ipcMain.handle('auth:login-github', async () => {
-  const tokens = await externalBrowserOAuth({
-    buildAuthorizeUrl: (state) => {
-      const u = new URL('https://github.com/login/oauth/authorize');
-      u.searchParams.set('client_id', GITHUB_CLIENT_ID);
-      u.searchParams.set('redirect_uri', OAUTH_BRIDGE_REDIRECT_URI);
-      u.searchParams.set('scope', 'read:user user:email');
-      u.searchParams.set('state', state);
-      return u.toString();
-    },
-    tokenUrl: 'https://github.com/login/oauth/access_token',
-    buildTokenBody: (code) => ({
-      code,
-      client_id: GITHUB_CLIENT_ID,
-      client_secret: GITHUB_CLIENT_SECRET,
-      redirect_uri: OAUTH_BRIDGE_REDIRECT_URI,
-    }),
-  });
-
-  return { provider: 'github', accessToken: tokens.access_token };
-});
-
 ipcMain.handle('system:shell', async (_, payload) => {
   const cmd = payload?.command;
   const args = Array.isArray(payload?.args) ? payload.args : [];
@@ -1111,30 +917,18 @@ ipcMain.handle('reports:list', () => {
   return { items };
 });
 
-// Windows/Linux: activating the beetleoptimiser:// protocol launches a new
-// OS process of this same exe with the URL as an argv entry. Without a
-// single-instance lock, that would open a second app window; with it, the
-// new process finds the lock held, quits immediately, and instead fires
-// 'second-instance' on the original (already-running) process with its
-// argv - which is where the OAuth callback URL actually needs to end up.
+// Single-instance lock: prevents the user from launching a second copy
+// of the same app via the port tile / tray / desktop. Without it, a double
+// click would spawn two windows reading the same PowerShell child process.
 const gotSingleInstanceLock = app.requestSingleInstanceLock();
 if (!gotSingleInstanceLock) {
   app.quit();
 } else {
-  app.on('second-instance', (_event, argv) => {
-    const url = argv.find((a) => a.startsWith(`${OAUTH_PROTOCOL}://`));
-    if (url) handleProtocolUrl(url);
+  app.on('second-instance', () => {
     if (mainWindow) {
       if (mainWindow.isMinimized()) mainWindow.restore();
       mainWindow.focus();
     }
-  });
-
-  // macOS delivers custom-protocol activations via 'open-url' instead of a
-  // second process launch.
-  app.on('open-url', (event, url) => {
-    event.preventDefault();
-    handleProtocolUrl(url);
   });
 
   app.whenReady().then(async () => {

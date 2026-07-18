@@ -1,0 +1,6 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Project Home
+    url: https://github.com/orchords-com/BeetleOptimiser
+  - name: Documentation
+    url: https://github.com/orchords-com/BeetleOptimiser/blob/main/README.md

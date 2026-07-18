@@ -1,7 +1,6 @@
-// Custom frameless title bar. Draggable region with logo + app name.
-// Left side has the account menu (sign in / avatar dropdown). Right side
-// has our own min/max/close buttons. The theme toggle lives in the global
-// StatusBar - not duplicated here.
+// Custom frameless title bar. Draggable region with logo + app name on the
+// left, our own min/close buttons on the right. The theme toggle lives
+// in the global StatusBar - not duplicated here.
 //
 // Per Electron docs, when frame: false (frameless), setTitleBarOverlay()
 // cannot render the OS controls on top. We render our own buttons via IPC.
@@ -9,10 +8,9 @@
 import React from 'react';
 import { Minus, X as CloseIcon } from '@phosphor-icons/react';
 import HieroglyphIcon from './HieroglyphIcon.jsx';
-import AccountMenu from './shared/AccountMenu.jsx';
 import { useWindowControls } from '../hooks/useWindowControls.js';
 
-export default function TitleBar({ c, auth }) {
+export default function TitleBar({ c }) {
   const { minimize, close } = useWindowControls();
 
   return (
@@ -28,36 +26,17 @@ export default function TitleBar({ c, auth }) {
         userSelect: 'none',
       }}
     >
-      {/* LEFT: account menu */}
-      <AccountMenu
-        c={c}
-        user={auth.user}
-        authLoading={auth.authLoading}
-        tokens={auth.tokens}
-        plan={auth.plan}
-        authError={auth.authError}
-        onSignInGoogle={auth.signInWithGoogle}
-        onSignInGitHub={auth.signInWithGitHub}
-        onSignOut={auth.signOut}
-      />
-
-      {/* CENTER: logo + app name, centered in the full titlebar width */}
-      <div style={{
-        position: 'absolute', left: '50%', top: '50%',
-        transform: 'translate(-50%, -50%)',
-        display: 'flex', alignItems: 'center', gap: 10,
-      }}>
+      {/* LEFT: logo + app name */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
         <HieroglyphIcon size={20} color={c.accent} />
         <span style={{ fontSize: 13, fontWeight: 600, letterSpacing: '0.01em' }}>
           Beetle Optimiser
         </span>
       </div>
 
-      {/* RIGHT: window controls (ADMIN badge removed per user spec) */}
+      {/* RIGHT: window controls */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 6, WebkitAppRegion: 'no-drag' }}>
-        {/* WINDOW CONTROL BUTTONS (frameless so we render our own) */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 2, marginLeft: 4 }}>
-          {/* Only Minimize and Close (NO maximize button per user spec) */}
           <button
             onClick={minimize}
             title="Minimize"

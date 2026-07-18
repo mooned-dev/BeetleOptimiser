@@ -80,17 +80,6 @@ contextBridge.exposeInMainWorld('beetleAPI', {
     resize: (size) => ipcRenderer.send('flyout:resize', size),
   },
 
-  // AUTH: loopback-redirect OAuth (RFC 8252). Each call opens the user's
-  // system browser to the provider's real consent screen and resolves once
-  // main.js has caught the redirect on a local port and exchanged the code
-  // for tokens - no popup window, no embedded webview (Google blocks OAuth
-  // from embedded webviews outright, see main.js's comment on this).
-  auth: {
-    loginGoogle: () => ipcRenderer.invoke('auth:login-google'),
-    loginGithub: () => ipcRenderer.invoke('auth:login-github'),
-    cancelLogin: () => ipcRenderer.invoke('auth:cancel-login'),
-  },
-
   // OPTIMIZER: one method per native op. All `invoke` (request/response);
   // long-running scans stream progress back via the `optimizer:progress`
   // event channel, subscribed via system.onProgress (below). Returns the

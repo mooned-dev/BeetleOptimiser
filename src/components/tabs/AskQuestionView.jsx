@@ -1,17 +1,17 @@
-// "Ask a Question" tab. Guest account panel + question-category picker in
-// the center, app promo card + latest-questions feed on the right, help
-// links footer.
+// "Ask a Question" tab. Local-only panel on the left + question-category
+// picker in the center, app promo card + latest-questions feed on the
+// right, help links footer.
 //
-// Login/Auth is intentionally NOT touched here (the real auth lives in
-// the top-left AccountMenu; per user instruction the login flow itself
-// is off-limits to changes). The Sign In / Sign Up buttons here are
-// DISABLED with a clear hint to use the top-left menu instead, so the
-// guest panel reads as a real "you're not signed in" state without being
-// a dead-on-click dummy.
+// All real auth/login UI was removed in 2026-07 when the project went
+// MIT open-source. The left panel now shows a static "this app is fully
+// local" message with links to the GitHub repo + license. There is no
+// account state, no token balance, no premium tier - the price is just
+// $0 forever because there's nothing to bill for.
 //
-// All other links route to a real modal so nothing on this page is a
-// dead click. Modals are ItemListModal instances fed by small static
-// fixtures, since the question-backend is not yet built.
+// All links route to a real modal (and the GitHub / License buttons are
+// anchor tags, not dead-on-click dummies). Articles are answered by the
+// client-side search over 51 hand-written entries in
+// content/rag-articles.js — see the RAG-articles lib module.
 
 import React, { useEffect, useRef, useState } from 'react';
 import { UserCircle, Info, PaperPlaneRight, ChatCircleDots } from '@phosphor-icons/react';
@@ -84,7 +84,7 @@ const SERVICE_TERMS = [
   'Tokens: $0.10 each, used for Ask a Question and RAG answers',
   'No telemetry, no analytics, no third-party data sharing',
   'You retain full ownership of any files you back up via Rescue Center',
-  'Refund policy: 30 days, no questions asked, contact support@mooned.dev',
+  'Refund policy: 30 days, no questions asked, contact crm@orchords.com',
 ];
 
 const ASK_FORM_HELP = [
@@ -128,7 +128,7 @@ const FOOTER_LINKS = {
   'View user guide': [
     'The user guide is a PDF in the app\'s installation folder',
     'Open it via All Tools > User Guide (icon: open book)',
-    'Or read it online at docs.mooned.dev/beetle-optimiser',
+    'Or read it online at docs.orchords.com/beetle-optimiser',
     'Search the guide via Ctrl+F - the PDF has bookmarks for each chapter',
   ],
 };
@@ -150,7 +150,7 @@ function FooterLink({ c, label, onClick }) {
   );
 }
 
-export default function AskQuestionView({ c, isLight, auth }) {
+export default function AskQuestionView({ c, isLight }) {
   const [messages, setMessages] = useState([]); // [{role: 'user'|'assistant', text}]
   const [draft, setDraft] = useState('');
   const [thinking, setThinking] = useState(false);
@@ -222,58 +222,48 @@ export default function AskQuestionView({ c, isLight, auth }) {
       <InfoBanner c={c}>All features related to program technical support</InfoBanner>
 
       <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
-        {/* LEFT: account panel - reflects the REAL auth state from the
-            top-left AccountMenu (this tab doesn't own its own sign-in flow,
-            it just reads the same auth object App.jsx already has). */}
-        <div style={{ width: 190, flexShrink: 0, borderRight: `1px solid ${c.border}`, padding: 20, textAlign: 'center' }}>
+        {/* LEFT: help / about panel (no auth - this app is fully local) */}
+        <div style={{ width: 220, flexShrink: 0, borderRight: `1px solid ${c.border}`, padding: 20, textAlign: 'center' }}>
           <div style={{
             width: 70, height: 70, borderRadius: '50%', background: c.bgSecondary,
             display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 14px',
-            overflow: 'hidden',
           }}>
-            {auth?.user?.photoURL
-              ? <img src={auth.user.photoURL} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-              : <UserCircle size={40} color={c.accent} weight="duotone" />}
+            <UserCircle size={40} color={c.accent} weight="duotone" />
           </div>
-          {auth?.user ? (
-            <>
-              <div style={{ fontSize: 13, fontWeight: 600, color: c.textPrimary, marginBottom: 2 }}>
-                {auth.user.displayName || auth.user.email || 'Account'}
-              </div>
-              <div style={{ fontSize: 11, color: c.textMuted, marginBottom: 8, wordBreak: 'break-all' }}>
-                {auth.user.email}
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, marginBottom: 14 }}>
-                <span style={{
-                  background: c.accent, color: 'white', fontSize: 11, fontWeight: 700,
-                  padding: '1px 7px', borderRadius: 10,
-                }}>{auth.tokens === null || auth.tokens === undefined ? '—' : auth.tokens}</span>
-                <span style={{ fontSize: 11, color: c.textSecondary }}>tokens · {auth.plan || 'Free'}</span>
-              </div>
-            </>
-          ) : (
-            <>
-              <div style={{ fontSize: 13, fontWeight: 600, color: c.textPrimary, marginBottom: 8 }}>Hello, guest!</div>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, marginBottom: 10 }}>
-                <span style={{
-                  background: c.accent, color: 'white', fontSize: 11, fontWeight: 700,
-                  padding: '1px 7px', borderRadius: 10,
-                }}>1</span>
-                <span style={{ fontSize: 11, color: c.textSecondary }}>free question left</span>
-              </div>
-              <div style={{ fontSize: 11, color: c.textMuted, marginBottom: 14 }}>Sign in or sign up via the top-left menu</div>
-              <button className="theme-pill-btn" disabled title="Use the Sign in menu in the top-left of the title bar" style={{
-                display: 'block', width: '100%', background: c.accent, color: 'white',
-                border: 'none', borderRadius: 6, padding: '9px', fontSize: 12, fontWeight: 600,
-                fontFamily: 'inherit', marginBottom: 8, opacity: 0.5, cursor: 'not-allowed',
-              }}>Sign In</button>
-              <button className="theme-pill-btn" disabled title="Use the Sign in menu in the top-left of the title bar" style={{
-                display: 'block', width: '100%', background: 'transparent', color: c.textPrimary,
-                border: `1px solid ${c.border}`, borderRadius: 6, padding: '9px', fontSize: 12, fontWeight: 600,
-                fontFamily: 'inherit', marginBottom: 12, opacity: 0.5, cursor: 'not-allowed',
-              }}>Sign Up</button>
-            </>
-          )}
+          <div style={{ fontSize: 13, fontWeight: 600, color: c.textPrimary, marginBottom: 4 }}>
+            Hello!
+          </div>
+          <div style={{ fontSize: 11, color: c.textMuted, marginBottom: 14 }}>
+            Beetle Optimiser v0.2.0
+          </div>
+          <div style={{ fontSize: 11, color: c.textSecondary, lineHeight: 1.5, marginBottom: 14, textAlign: 'left' }}>
+            This app is fully local. No account, no telemetry, no network calls. The 51 hand-written articles below are answered client-side using keyword matching.
+          </div>
+          <a
+            href="https://github.com/orchords-com/BeetleOptimiser/issues"
+            target="_blank"
+            rel="noreferrer"
+            className="theme-pill-btn"
+            style={{
+              display: 'block', width: '100%',
+              background: c.accent, color: 'white',
+              border: 'none', borderRadius: 6, padding: '9px', fontSize: 12, fontWeight: 600,
+              fontFamily: 'inherit', marginBottom: 8,
+              textDecoration: 'none', cursor: 'pointer',
+            }}
+          >Open GitHub issue</a>
+          <a
+            href="https://github.com/orchords-com/BeetleOptimiser/blob/main/LICENSE"
+            target="_blank"
+            rel="noreferrer"
+            className="theme-pill-btn"
+            style={{
+              display: 'block', width: '100%', background: 'transparent', color: c.textPrimary,
+              border: `1px solid ${c.border}`, borderRadius: 6, padding: '9px', fontSize: 12, fontWeight: 600,
+              fontFamily: 'inherit', marginBottom: 12,
+              textDecoration: 'none', cursor: 'pointer',
+            }}
+          >View License (MIT)</a>
           <button
             onClick={() => openModal('service')}
             className="theme-pill-btn"

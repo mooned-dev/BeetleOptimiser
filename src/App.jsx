@@ -9,8 +9,6 @@
 // the same scan -> confirm -> execute pattern used by the dedicated
 // Cleaner/Optimizer tabs. Every destructive action goes through
 // requestConfirm() so a bare renderer call (e.g. from devtools) is
-// rejected by main.js instead of running unchecked. Login/auth is
-// owned by useAuth() in TitleBar and is intentionally NOT touched here.
 
 import React, { useState, useEffect } from 'react';
 import { getColors } from './lib/colors.js';
@@ -18,7 +16,6 @@ import { useTheme } from './hooks/useTheme.js';
 import { useActiveTab } from './hooks/useActiveTab.js';
 import { useActiveNav } from './hooks/useActiveNav.js';
 import { useSidebarFold } from './hooks/useSidebarFold.js';
-import { useAuth } from './hooks/useAuth.js';
 
 import TitleBar from './components/TitleBar.jsx';
 import TabBar from './components/TabBar.jsx';
@@ -74,7 +71,6 @@ export default function App() {
   const { active: activeTab, setActive: setActiveTab } = useActiveTab('Dashboard');
   const { active: activeNav, setActive: setActiveNav } = useActiveNav('pc');
   const { folded: sidebarFolded, toggle: toggleSidebar } = useSidebarFold(false);
-  const auth = useAuth();
 
   const c = getColors(isLight);
 
@@ -1009,7 +1005,7 @@ export default function App() {
       fontFamily: '"Segoe UI", -apple-system, BlinkMacSystemFont, sans-serif',
       fontSize: 13,
     }}>
-      <TitleBar c={c} auth={auth} />
+      <TitleBar c={c} />
 
       <TabBar c={c} activeTab={activeTab} onTabChange={setActiveTab} />
 
@@ -1083,7 +1079,7 @@ export default function App() {
         ) : activeTab === 'Care Center' ? (
           <CareCenterView c={c} isLight={isLight} />
         ) : activeTab === 'Ask a Question' ? (
-          <AskQuestionView c={c} isLight={isLight} auth={auth} />
+          <AskQuestionView c={c} isLight={isLight} />
         ) : (
           <UnknownTabFallback c={c} tab={activeTab} />
         )}

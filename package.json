@@ -1,7 +1,7 @@
 {
-  "name": "beetleoptimiser-electron",
+  "name": "beetleoptimiser",
   "version": "0.2.0",
-  "description": "Beetle Optimiser - Windows system optimizer",
+  "description": "Beetle Optimiser - open-source Windows system optimizer (deep disk cleaner, defrag, registry repair, startup manager, uninstall manager, Win10 protector, etc.)",
   "main": "main.js",
   "scripts": {
     "dev": "vite",
@@ -9,9 +9,22 @@
     "start": "npm run build && electron .",
     "package": "npm run build && electron-builder --win portable"
   },
-  "keywords": [],
-  "author": "MOONED DEV STUDIO",
-  "license": "Proprietary",
+  "keywords": [
+    "windows",
+    "optimizer",
+    "cleanup",
+    "defrag",
+    "registry",
+    "startup",
+    "electron",
+    "powershell",
+    "system-utility",
+    "open-source"
+  ],
+  "homepage": "https://github.com/orchords-com/BeetleOptimiser",
+  "bugs": "https://github.com/orchords-com/BeetleOptimiser/issues",
+  "author": "ORCHIDS.COM <crm@orchords.com>",
+  "license": "MIT",
   "devDependencies": {
     "@vitejs/plugin-react": "^4.0.0",
     "electron": "30.5.1",
@@ -20,13 +33,11 @@
   },
   "dependencies": {
     "@phosphor-icons/react": "^2.1.10",
-    "firebase": "^12.15.0",
-    "node-llama-cpp": "^3.19.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },
   "build": {
-    "appId": "dev.mooned.beetleoptimiser",
+    "appId": "com.orchords.beetleoptimiser",
     "productName": "BeetleOptimiser",
     "win": {
       "icon": "build/icon.ico",
@@ -43,7 +54,6 @@
       "main.js",
       "src/preload.js",
       "scripts/**/*",
-      "models/**/*",
       "dist/index.html",
       "dist/assets/**/*",
       "build/icon.ico",
@@ -51,13 +61,7 @@
       "!dist/win-unpacked/**"
     ],
     "asarUnpack": [
-      "scripts/**/*",
-      "models/**/*",
-      "node_modules/node-llama-cpp/**/*",
-      "node_modules/@node-llama-cpp/**/*"
+      "scripts/**/*"
     ]
-  },
-  "allowScripts": {
-    "node-llama-cpp@3.19.0": true
   }
 }

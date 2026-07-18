@@ -1,10 +1,10 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 
-// Manual chunk splits to fix the "1 MB" bundle warning on build.
-// Firebase libraries are heavyweight + only needed when the user interacts
-// with account/buy/ask-a-question. Splitting them out shrinks the main
-// entry chunk so the dashboard renders much faster on cold load.
+// Manual chunk splits to fix the "1 MB" bundle warning on build. Phosphor
+// icons are bundled heavy and used app-wide, so we split them into a
+// lazily-loaded vendor chunk. The dashboard tab mounts lazily inside the
+// same chunk as the rest of the renderer.
 //
 // Reference: https://rollupjs.org/configuration-options/#output-manualchunks
 export default defineConfig({
@@ -16,9 +16,6 @@ export default defineConfig({
     rollupOptions: {
       output: {
         manualChunks: (id) => {
-          if (id.includes('node_modules/firebase/') || id.includes('node_modules/@firebase/')) {
-            return 'firebase-vendor';
-          }
           if (id.includes('node_modules/@phosphor-icons/')) {
             return 'phosphor-vendor';
           }
