@@ -17,6 +17,8 @@ import { useActiveTab } from './hooks/useActiveTab.js';
 import { useActiveNav } from './hooks/useActiveNav.js';
 import { useSidebarFold } from './hooks/useSidebarFold.js';
 import useGlobalSearch from './hooks/useGlobalSearch.js';
+import { TABS } from './data/tabs.js';
+import { NAV_ITEMS } from './data/navItems.js';
 
 import TitleBar from './components/TitleBar.jsx';
 import CommandPalette from './components/shared/CommandPalette.jsx';
@@ -70,8 +72,8 @@ function toStartupListItem(item) {
 
 export default function App() {
   const { isLight, toggle } = useTheme();
-  const { active: activeTab, setActive: setActiveTab } = useActiveTab('Dashboard');
-  const { active: activeNav, setActive: setActiveNav } = useActiveNav('pc');
+  const { active: activeTab, setActive: setActiveTab } = useActiveTab('Dashboard', TABS);
+  const { active: activeNav, setActive: setActiveNav } = useActiveNav('pc', NAV_ITEMS);
   const { folded: sidebarFolded, toggle: toggleSidebar } = useSidebarFold(false);
   const [paletteOpen, setPaletteOpen] = useGlobalSearch();
 
