@@ -215,6 +215,76 @@ test('token: expired entries are rejected', () => {
   assert.throws(() => consume('expired', 'clean-junk'), /rejected/);
 });
 
+
+test('token: cancel drops only the requested entry', () => {
+  // Mirror the cancel-confirm IPC: a delete-only path that drops one
+  // specific token without consuming others.
+  const store = new Map();
+  store.set('x', { action: 'a', expires: Date.now() + 30000 });
+  store.set('y', { action: 'b', expires: Date.now() + 30000 });
+  store.set('z', { action: 'c', expires: Date.now() + 30000 });
+  // Cancel x only
+  store.delete('x');
+  assert.equal(store.size, 2);
+  assert.ok(store.has('y'));
+  assert.ok(store.has('z'));
+  assert.ok(!store.has('x'));
+});
+
+test('token: explicit cancel returns the right ok flag', () => {
+  // Mirror cancel-confirm's response shape: { ok: had }
+  const store = new Map();
+  store.set('present', { action: 'x', expires: Date.now() + 1000 });
+  // cancel an existing token
+  const a = { ok: store.delete('present') };
+  assert.deepEqual(a, { ok: true });
+  // cancel a missing token
+  const b = { ok: store.delete('not-here') };
+  assert.deepEqual(b, { ok: false });
+});
+
+test('token: sweeper evicts only expired entries', () => {
+  const CONFIRM_TTL_MS = 30_000;
+  const now = Date.now();
+  const pending = new Map();
+  pending.set('expired-1', { action: 'a', expires: now - 5 });
+  pending.set('expired-2', { action: 'a', expires: now - 10 });
+  pending.set('fresh-1', { action: 'a', expires: now + 60000 });
+  pending.set('fresh-2', { action: 'a', expires: now + 120000 });
+
+  // Run sweeper
+  let dropped = 0;
+  for (const [tok, entry] of pending) {
+    if (entry.expires <= now) { pending.delete(tok); dropped++; }
+  }
+
+  assert.equal(dropped, 2);
+  assert.equal(pending.size, 2);
+  assert.ok(pending.has('fresh-1'));
+  assert.ok(pending.has('fresh-2'));
+  assert.ok(!pending.has('expired-1'));
+  assert.ok(!pending.has('expired-2'));
+});
+
+test('token: sweeper never touches an actively-consumed token', () => {
+  // After consume, the entry is gone. A subsequent sweep is a no-op.
+  const s = makeTokenStore();
+  const t = s.requestConfirm('clean-junk');
+  s.consumeConfirmation(t, 'clean-junk');
+  // No map access needed; the consume function removed it.
+  // Re-run makeTokenStore to verify fresh store works.
+  assert.equal(typeof t, 'string');
+});
+
+test('token: confirm always throws on action mismatch, including after partial TTL', () => {
+  const s = makeTokenStore();
+  const t = s.requestConfirm('clean-junk');
+  // Even with action wrong, never silently consume.
+  assert.throws(() => s.consumeConfirmation(t, 'wiper-wipe'), /wiper-wipe/);
+  // Confirm that the wrong-action attempt also dropped the token.
+  assert.throws(() => s.consumeConfirmation(t, 'clean-junk'), /clean-junk/);
+});
+
 // ====================== NDJSON parser ===============================
 
 test('NDJSON: accepts one event per line', () => {

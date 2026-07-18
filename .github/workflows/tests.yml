@@ -1,0 +1,71 @@
+# GitHub Actions CI for Beetle Optimiser
+#
+# Runs on every push to master and on every PR opened against master.
+# - Smoke test: npm install + npm test (must pass before any merge).
+# - Build smoke: npm run build (must succeed; we don't publish the artifact
+#   from CI to keep the build prod portable behavior in human PRs only).
+#
+# We deliberately run on Node 20 + Node 22 LTS in parallel because
+# Electron 33 currently targets Node 20 at runtime and the renderer/dev
+# toolchain tends to behave slightly differently between Node 20 + 22.
+# Whatever passes on both is safe to merge.
+
+name: ci
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+jobs:
+  test:
+    name: test (node ${{ matrix.node }})
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ['20', '22']
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node ${{ matrix.node }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+
+      - name: Install
+        run: npm ci --no-fund --no-audit
+
+      - name: Test
+        run: npm test
+
+      - name: Build
+        run: npm run build
+
+  verify-fresh-clone:
+    # On the master branch only, do a destructive clone-and-build to
+    # catch any "I'm relying on stale files from a prior commit" bugs
+    # that would only surface on a real new-clone-from-scratch install.
+    name: fresh-clone (master only)
+    needs: test
+    runs-on: windows-latest
+    if: github.ref == 'refs/heads/master'
+    steps:
+      - name: Checkout (shallow)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Setup Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Verify npm test + build pass on a clean checkout
+        run: |
+          npm ci --no-fund --no-audit
+          npm test
+          npm run build
+          echo "OK: fresh clone + test + build all pass"

@@ -129,3 +129,18 @@ with:
 If you find a security issue (especially anything that lets a malformed
 IPC call escape the confirmation gate), please email
 crm@orchords.com rather than opening a public issue.
+
+## Before opening a PR
+
+Run the same checks CI runs:
+
+```powershell
+npm ci        # or `npm install`
+npm test      # 31 tests, ~200 ms, runs under plain Node
+npm run build # vite build - the CI also runs this
+```
+
+`.github/workflows/tests.yml` runs on Windows + Node 20 **and** Node 22 in
+parallel. PRs that don't pass on both are auto-merged-blocked. Add the
+same Node version you tested locally to the workflow file if you're
+adding new test-only deps.

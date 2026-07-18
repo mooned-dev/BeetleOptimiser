@@ -570,11 +570,51 @@ ipcMain.handle('system:shell', async (_, payload) => {
 
 const pendingConfirmations = new Map();
 const CONFIRM_TTL_MS = 30_000;
+// Sweeper cadence (ms): enough that an abandoned token reaches its
+// expiry-but-still-in-map state for at most one tick.
+const CONFIRM_SWEEP_MS = 60_000;
+
+// Periodic eviction of expired tokens that the user never consumed
+// (modal closed without clicking Confirm, DevTools call that didn't
+// follow through, etc.). Without this the Map would grow unbounded
+// across the lifetime of a single Electron process - a process that
+// the user might keep open for days. The consume path deletes on
+// success/mismatch anyway; this just covers the abandoned-token case.
+function sweepExpiredConfirmations() {
+  const now = Date.now();
+  let dropped = 0;
+  for (const [token, entry] of pendingConfirmations) {
+    if (entry.expires <= now) {
+      pendingConfirmations.delete(token);
+      dropped++;
+    }
+  }
+  if (dropped > 0) {
+    // Wrapped in a no-op if DIAGNOSTICS is off; allow ad-hoc debugging.
+    // eslint-disable-next-line no-console
+    if (process.env.BEETLE_DEBUG === '1') {
+      console.log(`[confirm] swept ${dropped} expired token(s); store size=${pendingConfirmations.size}`);
+    }
+  }
+}
+const confirmSweepTimer = setInterval(sweepExpiredConfirmations, CONFIRM_SWEEP_MS);
+confirmSweepTimer.unref?.();  // don't block app shutdown
 
 ipcMain.handle('optimizer:request-confirm', (_, action) => {
   const token = crypto.randomUUID();
   pendingConfirmations.set(token, { action, expires: Date.now() + CONFIRM_TTL_MS });
   return token;
+});
+
+// Explicit cancel path called by the renderer when the user dismisses a
+// ConfirmModal without accepting. Clears every token the renderer was
+// holding so the action-name pair never lingers in the map. The
+// renderer's existing modal-cancel code is the natural place to call
+// this; we register the IPC handler to make the contract explicit.
+ipcMain.handle('optimizer:cancel-confirm', (_, token) => {
+  if (typeof token !== 'string') return { ok: false };
+  const had = pendingConfirmations.delete(token);
+  return { ok: had };
 });
 
 // Input validation helpers for destructive IPC handlers. These keep

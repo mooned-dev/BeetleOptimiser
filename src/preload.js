@@ -94,6 +94,7 @@ contextBridge.exposeInMainWorld('beetleAPI', {
     // renderer's ConfirmModal has actually been accepted by the user -
     // it's what stands between a click and real deletion.
     requestConfirm: (action) => ipcRenderer.invoke('optimizer:request-confirm', action),
+    cancelConfirm: (token) => ipcRenderer.invoke('optimizer:cancel-confirm', token),
 
     // System Information (read-only)
     getSystemInfo: () => ipcRenderer.invoke('optimizer:get-sysinfo'),

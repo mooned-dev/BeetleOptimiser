@@ -9,6 +9,7 @@ real PowerShell operation - no mocks, no placeholders.
 ![Status](https://img.shields.io/badge/status-v1.0%20shipped-green)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Platform](https://img.shields.io/badge/platform-Windows%2010%2F11-blue)
+![CI](https://github.com/ORCHORDS/BeetleOptimiser/actions/workflows/tests.yml/badge.svg)
 
 ## What this is
 
@@ -22,7 +23,7 @@ turns those lines into a card you can confirm or cancel.
 | | | |
 |--|--|--|
 | **38 PowerShell scripts** in `scripts/` | **12 tabs** + **22 dashboard tiles** | **82 IPC handlers** in `main.js` |
-| **51 RAG articles** for the Ask-a-Question tab | **26 tests** covering validation + token + RAG | **Ctrl+K** global search |
+| **51 RAG articles** for the Ask-a-Question tab | **31 tests** covering validation + token + RAG | **Ctrl+K** global search |
 
 ## Tabs
 
