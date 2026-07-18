@@ -136,7 +136,7 @@ Run the same checks CI runs:
 
 ```powershell
 npm ci        # or `npm install`
-npm test      # 68 tests, ~250 ms, runs under plain Node
+npm test      # 86 tests, ~400 ms, runs under plain Node
 npm run build # vite build - the CI also runs this
 ```
 

@@ -4,6 +4,36 @@ All notable changes to this project will be documented here. The format
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the
 project follows [SemVer](https://semver.org/) for stable releases.
 
+## [Unreleased]
+
+Adds since v1.0.0 tag, currently still pointing at the same release
+on github.com/ORCHORDS/BeetleOptimiser/releases/tag/release-2026-07-18-v1.
+
+### Added
+- Persist the last active tab + right-sidebar nav item across app
+  restarts (`useActiveTab` / `useActiveNav` hooks read + write
+  `localStorage('beetle-last-tab')` / `localStorage('beetle-last-nav')`
+  with validation against the TABS and NAV_ITEMS source-of-truth so
+  a renamed tab in a newer release gracefully falls back)
+- spawnOptimizer hang-watcher: 5-minute default `setTimeout` per
+  PowerShell subprocess that fires `SIGTERM` then `SIGKILL` if the
+  script never closes, so the renderer UI never gets stuck on
+  "Working...". Overridden to 15-60 minutes for the legit
+  long-running scripts (Repair-Volume, free-space wipe, defrag,
+  file-recovery restore, defrag-on-boot apply)
+- 12 new tests for the localStorage-persistence hooks + 6 new tests
+  for the spawnOptimizer timeout (settle-once, fast-script-doesn't-fire-kill,
+  late-close-is-ignored, QuotaExceededError swallows silently)
+
+### Fixed
+- system:open-external URL-scheme allowlist (http / https / mailto only)
+- system:shell command allowlist (`start ms-settings:` + `powershell
+  -NoProfile -Command Remove-Item on rescue/` only)
+- Confirmation-token store memory leak (periodic sweep + explicit
+  `optimizer:cancel-confirm` IPC handler)
+
+Test count: 46 -> 86 passing.
+
 ## [1.0.0] - 2026-07-18
 
 The first production-ready public release. Built on Electron 33 + React 19 + Vite 6 + electron-builder 25 + 38 PowerShell scripts and 82 IPC handlers.
