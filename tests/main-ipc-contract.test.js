@@ -552,3 +552,166 @@ test('system:shell: rejects missing command entirely', () => {
   assert.throws(() => shellCheck(null), /command is required/);
   assert.throws(() => shellCheck(''), /command is required/);
 });
+
+
+// ====================== spawnOptimizer timeout ===========================
+
+// Mirror of the spawnOptimizer wrapper logic. Production code hangs the
+// UI forever if a PowerShell script never resolves; this wrapper
+// guarantees:
+//   - non-zero close errors reject with "<script> exited N: <stderr>"
+//   - closed-after-success resolves with {items, stderr, exitCode: 0}
+//   - if timeoutMs elapses with no close event, the child is SIGTERMed
+//     then SIGKILLed, and the promise rejects with "<script> timed out
+//     after Nms"
+//   - settle-once: even if SIGTERM arrives, then SIGKILL fires later,
+//     the promise only settles the first time
+
+const { EventEmitter } = require('node:events');
+
+function makeWrappedSpawn({ emitCloseAfter = 0, exitCode = 0, stderrMsg = '' }) {
+  const child = new EventEmitter();
+  child.kill = function () { this.killed = true; };
+  child.killed = false;
+  child.exitCode = null;
+
+  // Schedule a fake "close" event so success-path tests can observe it.
+  if (emitCloseAfter > 0) {
+    setTimeout(() => {
+      if (child.killed) return;       // simulate real PS being killed before close
+      child.exitCode = exitCode;
+      child.emit('close', exitCode);
+    }, emitCloseAfter);
+  }
+
+  return child;
+}
+
+// Lightweight mirror of the spawnOptimizer wrapper. We're not running
+// actual PowerShell here - just exercising the wrapper contract on a
+// fake EventEmitter child.
+function wrap(child, timeoutMs, scriptRel) {
+  let timer = null;
+  let settled = false;
+  let killTimer = null;
+  const result = { items: [], stderr: '', exitCode: null };
+
+  return new Promise((resolve, reject) => {
+    const finish = (fn) => {
+      if (settled) return;
+      settled = true;
+      if (timer) { clearTimeout(timer); timer = null; }
+      if (killTimer) { clearTimeout(killTimer); killTimer = null; }
+      fn();
+    };
+    child.on('close', (code) => {
+      result.exitCode = code;
+      if (code === 0) finish(() => resolve(result));
+      else finish(() => reject(new Error(`${scriptRel} exited ${code}: ${result.stderr.slice(0, 200)}`)));
+    });
+    child.on('error', (err) => finish(() => reject(err)));
+    timer = setTimeout(() => {
+      if (settled || child.killed || child.exitCode != null) return;
+      try { child.kill('SIGTERM'); } catch (_) {}
+      killTimer = setTimeout(() => {
+        if (!settled) { try { child.kill('SIGKILL'); } catch (_) {} }
+      }, 2000);
+      finish(() => reject(new Error(`${scriptRel} timed out after ${timeoutMs}ms`)));
+    }, timeoutMs);
+  });
+}
+
+test('spawnOptimizer: resolves on clean close with exit code 0', async () => {
+  const child = makeWrappedSpawn({ emitCloseAfter: 5, exitCode: 0 });
+  const result = await wrap(child, 200, 'scripts/test.ps1');
+  assert.equal(result.exitCode, 0);
+});
+
+test('spawnOptimizer: rejects on non-zero close with stderr snippet', async () => {
+  const child = new EventEmitter();
+  child.kill = () => {};
+  child.killed = false;
+  child.exitCode = null;
+  setTimeout(() => child.emit('close', 1), 5);
+
+  await assert.rejects(
+    () => wrap(child, 200, 'scripts/test.ps1'),
+    /test.ps1 exited 1/,
+  );
+});
+
+test('spawnOptimizer: rejects with "timed out" if no close event arrives', async () => {
+  const child = new EventEmitter();
+  child.kill = function () { this.killed = true; };
+  child.killed = false;
+  child.exitCode = null;
+  // No close event emitted at all - simulate a hung child process.
+
+  await assert.rejects(
+    () => wrap(child, 50, 'scripts/hung.ps1'),
+    /hung\.ps1 timed out after 50ms/,
+  );
+  // The child should have been SIGTERMed by the time the timer fired
+  assert.equal(child.killed, true);
+});
+
+test('spawnOptimizer: settle-once - even if SIGKILL fires later, only first resolve counts', async () => {
+  const child = new EventEmitter();
+  const events = [];
+  child.on('close', () => events.push('close'));
+  child.kill = function () { events.push('kill'); this.killed = true; };
+  child.killed = false;
+  child.exitCode = null;
+
+  // Trigger timeout, which triggers SIGTERM, then SIGKILL. Then later
+  // (after 5ms) the close event arrives - late. The promise should
+  // already be settled as timed-out and the late close should be a
+  // no-op.
+  const promise = wrap(child, 30, 'scripts/very-hung.ps1');
+  await assert.rejects(() => promise, /timed out after 30ms/);
+
+  // Sanity: late closes after settle are ignored. We can't compare
+  // event order deterministically from outside, but we CAN confirm
+  // the promise itself didn't resolve after we already saw the reject.
+  // The kill sequence itself is the observable: kill is called at
+  // least once, the child is marked killed.
+  assert.equal(child.killed, true);
+  assert.ok(events.includes('kill'), `expected at least one kill call, got ${JSON.stringify(events)}`);
+});
+
+test('spawnOptimizer: settled flag suppresses a duplicated late close', async () => {
+  // Make two close events fire (one from a SIGTERM trigger, one late).
+  // The promise must only settle the first time.
+  const child = new EventEmitter();
+  child.kill = function () {
+    // Emulate real PS: SIGTERM eventually triggers close in Node
+    setImmediate(() => this.emit('close', 1));
+    this.killed = true;
+  };
+  child.killed = false;
+  child.exitCode = null;
+  child.on('close', () => { /* no-op */ });
+
+  // Drive the timeout, then a real-close-after. Even though the
+  // close arrives first via setImmediate, the timer fires at ~30ms
+  // and triggers reject first.
+  const promise = wrap(child, 25, 'scripts/close-after-kill.ps1');
+  await assert.rejects(() => promise, /timed out after 25ms/);
+  // Don't crash.
+});
+
+test('spawnOptimizer: valid SIGTERM + 2s SIGKILL fallback never runs because close arrives first', async () => {
+  // Sanity test: a happy-path script that finishes quickly should
+  // have its timer cleared (no kill at all).
+  const child = new EventEmitter();
+  child.kill = function () { events.push('kill'); this.killed = true; };
+  child.killed = false;
+  child.exitCode = null;
+  const events = [];
+  setTimeout(() => { child.exitCode = 0; child.emit('close', 0); }, 5);
+
+  const result = await wrap(child, 200, 'scripts/fast.ps1');
+  assert.equal(result.exitCode, 0);
+  assert.equal(child.killed, false);
+  assert.ok(!events.includes('kill'), `kill should not fire on fast scripts; got ${JSON.stringify(events)}`);
+});

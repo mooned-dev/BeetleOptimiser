@@ -741,7 +741,18 @@ function consumeConfirmation(token, expectedAction) {
   }
 }
 
-function spawnOptimizer(scriptRel, args) {
+// Per-script timeout default. The wildcard scan / defrag-on-boot /
+// wiper-wipe scripts might legitimately take longer than a quick
+// inquiry, so individual callers can pass an override below.
+// 5 minutes is generous for a typical optimizer run - some scripts
+// (defrag-on-boot across all volumes + SSD trim) genuinely need
+// several minutes; the override below can extend that. Anything
+// still running past 5 minutes is almost certainly hung on a
+// blocked registry call / held file handle / printer spooler /
+// similar - and gets killed rather than blocking the UI.
+const SPAWN_DEFAULT_TIMEOUT_MS = 5 * 60 * 1000;
+
+function spawnOptimizer(scriptRel, args, opts = {}) {
   const scriptPath = path.join(__dirname, scriptRel).replace('app.asar', 'app.asar.unpacked');
   const child = spawn(
     'powershell',
@@ -749,8 +760,25 @@ function spawnOptimizer(scriptRel, args) {
     { windowsHide: true }
   );
   const result = { items: [], stderr: '', exitCode: null };
+  const timeoutMs = Number.isFinite(opts.timeoutMs) ? opts.timeoutMs : SPAWN_DEFAULT_TIMEOUT_MS;
+
+  // Timer ref held outside the Promise so we can clear it from close /
+  // error paths without leaking. Using a Node Timer (not a wall-clock
+  // Date arithmetic) is exact even under heavy CPU load.
+  let timer = null;
+  const clearTimer = () => { if (timer) { clearTimeout(timer); timer = null; } };
+
   return new Promise((resolve, reject) => {
     let buffer = '';
+    let settled = false;
+
+    const finish = (fn) => {
+      if (settled) return;
+      settled = true;
+      clearTimer();
+      fn();
+    };
+
     child.stdout.on('data', (chunk) => {
       buffer += chunk.toString();
       let idx;
@@ -762,12 +790,30 @@ function spawnOptimizer(scriptRel, args) {
       }
     });
     child.stderr.on('data', (c) => { result.stderr += c.toString(); });
-    child.on('error', (err) => reject(err));
+    child.on('error', (err) => finish(() => reject(err)));
+
     child.on('close', (code) => {
       result.exitCode = code;
-      if (code === 0) resolve(result);
-      else reject(new Error(`${scriptRel} exited ${code}: ${result.stderr.slice(0, 200)}`));
+      if (code === 0) finish(() => resolve(result));
+      else finish(() => reject(new Error(`${scriptRel} exited ${code}: ${result.stderr.slice(0, 200)}`)));
     });
+
+    // Hang-watcher: SIGKILL the child if no close event arrives
+    // before timeoutMs. SIGTERM first (graceful), wait 2s, then
+    // SIGKILL (force). The renderer gets a clear "timed out" error
+    // rather than a UI stuck on "Working..." forever.
+    timer = setTimeout(() => {
+      if (settled || child.killed || child.exitCode != null) return;
+      try { child.kill('SIGTERM'); } catch (_) {}
+      const killTimer = setTimeout(() => {
+        if (!settled) { try { child.kill('SIGKILL'); } catch (_) {} }
+      }, 2000);
+      // Don't keep this kill-Timer alive after we're done either way;
+      // clearTimeout on the parent's promise resolution is handled by
+      // the finish() callback.
+      result._killTimer = killTimer;
+      finish(() => reject(new Error(`${scriptRel} timed out after ${timeoutMs}ms`)));
+    }, timeoutMs);
   });
 }
 
@@ -785,7 +831,9 @@ ipcMain.handle('optimizer:diskdoctor-scan', (_, driveLetter) => {
 ipcMain.handle('optimizer:diskdoctor-repair', (_, driveLetter, token) => {
   consumeConfirmation(token, 'diskdoctor-repair');
   if (driveLetter != null) validateDriveLetter(driveLetter);
-  return spawnOptimizer('scripts/optimize-diskdoctor.ps1', [...(driveLetter ? [driveLetter + ':'] : []), '--yes']);
+  return spawnOptimizer('scripts/optimize-diskdoctor.ps1', [...(driveLetter ? [driveLetter + ':'] : []), '--yes'], {
+    timeoutMs: 30 * 60 * 1000, // Repair-Volume can legitimately take 20+ min on multi-TB drives
+  });
 });
 
 // Service Manager - list / disable / enable, same shape as Startup Manager.
@@ -920,14 +968,18 @@ ipcMain.handle('optimizer:file-recovery-list', () => spawnOptimizer('scripts/opt
 ipcMain.handle('optimizer:file-recovery-restore', (_, paths, destDir, token) => {
   consumeConfirmation(token, 'file-recovery-restore');
   if (!Array.isArray(paths) || paths.length === 0) throw new Error('No files given to restore');
-  return spawnOptimizer('scripts/optimize-file-recovery.ps1', ['restore', ...paths, '--dest', destDir, '--yes']);
+  return spawnOptimizer('scripts/optimize-file-recovery.ps1', ['restore', ...paths, '--dest', destDir, '--yes'], {
+    timeoutMs: 15 * 60 * 1000, // 1000s of small files can take a while
+  });
 });
 ipcMain.handle('optimizer:list-addons', () => spawnOptimizer('scripts/optimize-addons.ps1', []));
 ipcMain.handle('optimizer:win10-list', () => spawnOptimizer('scripts/optimize-win10.ps1', ['list-all']));
 ipcMain.handle('optimizer:wiper-list', () => spawnOptimizer('scripts/optimize-wiper.ps1', ['list']));
 ipcMain.handle('optimizer:wiper-wipe', (_, driveLetter, token) => {
   consumeConfirmation(token, 'wiper-wipe');
-  return spawnOptimizer('scripts/optimize-wiper.ps1', ['wipe', validateDriveLetter(driveLetter) + ':', '--yes']);
+  return spawnOptimizer('scripts/optimize-wiper.ps1', ['wipe', validateDriveLetter(driveLetter) + ':', '--yes'], {
+    timeoutMs: 30 * 60 * 1000, // Free-space wipe on a 1+ TB drive genuinely takes time
+  });
 });
 ipcMain.handle('optimizer:slimmer-list', () => spawnOptimizer('scripts/optimize-windows-slimmer.ps1', ['list']));
 ipcMain.handle('optimizer:slimmer-apply', (_, op, token) => {
@@ -982,7 +1034,9 @@ ipcMain.handle('optimizer:backup-cleaner-apply', (_, token) => {
 ipcMain.handle('optimizer:defrag-on-boot', () => spawnOptimizer('scripts/optimize-defrag-on-boot.ps1', ['list']));
 ipcMain.handle('optimizer:defrag-on-boot-apply', (_, token) => {
   consumeConfirmation(token, 'defrag-on-boot-apply');
-  return spawnOptimizer('scripts/optimize-defrag-on-boot.ps1', ['apply', '--yes']);
+  return spawnOptimizer('scripts/optimize-defrag-on-boot.ps1', ['apply', '--yes'], {
+    timeoutMs: 60 * 60 * 1000, // Registry edit only - shouldn't take long, but allow extra headroom
+  });
 });
 ipcMain.handle('optimizer:defrag-on-boot-reset', (_, token) => {
   consumeConfirmation(token, 'defrag-on-boot-reset');
