@@ -1,2 +1,2 @@
-6250e073f56d490e915d636fa5ee399fe259f0fd1870cf6d5ea0ba1e31741229  BeetleOptimiser 0.2.0.exe
-63a11b65f8e1729c3b7a375ad9cddf7834d9c035ef66c76476e78f774e2733ef  BeetleOptimiser-0.2.0-portable.zip
+88968542b8d030edab2ff5f4df820b09548b5df75c41891c0625cdbfcd3a5645  BeetleOptimiser-1.0.0.exe
+c5d2dbed0f703b557022561ed4de3475674ad0ab22f0d9d1277ee42653b9e699  BeetleOptimiser-1.0.0-portable.zip
