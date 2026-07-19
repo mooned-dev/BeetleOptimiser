@@ -205,4 +205,4 @@ the tests in the same commit.
 
 ## License
 
-[MIT © ORCHIDS.COM](./LICENSE)
+[MIT © ORCHORDS.COM](./LICENSE)
